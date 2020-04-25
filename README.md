@@ -11,7 +11,7 @@ Any class that derives from the Subworld class is automatically registered as a 
 
 - Loading
 
-Loading a subworld is as simple as calling "SLWorld.EnterSubworld". Each subworld can have a custom loading UI if its class overrides "loadingUIState". The UI can even persist after the world is loaded if "loadingUI" is overridden.
+Loading a subworld is as simple as calling "Subworld.Enter". Each subworld can have a custom loading UI if its class overrides "loadingUIState". The UI can even persist after the world is loaded if "loadingUI" is overridden.
 
 - Saving
 
@@ -25,6 +25,6 @@ Subworld Library doesn't just handle loading, saving, etc. in Singleplayer; it a
 
 Subworld Library gets rid of Space, the Underworld, and both Oceans inside subworlds, freeing up tons of world space, and allowing for very small subworlds.
 
-If you need help with making a subworld, or encounter a bug, please go to the #sublib_help and #sublib_bugs channels in the GaMeterraria Discord respectively.
+If you need help with making a subworld, or encounter a bug, please go to the #sublib channel in the GaMeterraria Discord.
 
 https://discord.gg/zumQztb
