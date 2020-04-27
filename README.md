@@ -7,7 +7,7 @@ What it does, in more detail:
 
 - Registering
 
-Any class that derives from the Subworld class is automatically registered as a subworld. Subworlds are highly customisable; from their size and how they generate, to whether they or the players inside of them save, to even what ModWorld is allowed to update while inside of them.
+Any class that derives from the Subworld class is automatically registered as a subworld. Subworlds are highly customisable; from their size and how they generate, to whether they or the players inside of them save, to even what ModWorld is allowed to update while inside of them. Registering a subworld without directly referencing Subworld Library is also possible, via Mod.Call.
 
 - Loading
 
@@ -19,7 +19,7 @@ Subworlds can be set to be either temporary or permanent. Subworlds can also pre
 
 - Multiplayer
 
-Subworld Library doesn't just handle loading, saving, etc. in Singleplayer; it also does so in Multiplayer, with little to no extra work required on your end.
+Subworld Library doesn't just handle loading, saving, etc. in Singleplayer; it also does so in Multiplayer, with little to no extra work required on your end. By default, players vote on whether to enter/leave a subworld, preventing any unwanted entries or exits.
 
 - Misc.
 
