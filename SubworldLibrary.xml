@@ -6,7 +6,7 @@
     <members>
         <member name="M:SubworldLibrary.SubworldLibrary.Call(System.Object[])">
             <summary>
-            Available commands:<br/>"Register", Mod mod, string name, int width, int height, List{object} tasks (string name, float weight, Action{GenerationProgress} method), Action load = null, Action unload = null, ModWorld modWorld = null, bool saveSubworld = false, bool disablePlayerSaving = false, bool saveModData = false, bool noWorldUpdate = true, UserInterface loadingUI = null, Func{UIState} loadingUIState = null, Func{UIState} votingUI = null, ushort votingDuration = 1800, Action onVotedFor = null<br/>"Enter", string id<br/>"Exit"<br/>"IsActive", string id<br/>"AnyActive", Mod mod<br/>"DrawMenu", bool (optional)<br/>"DrawUnderworldBackground", bool (optional)
+            Available commands:<br/>"Register", Mod mod, string name, int width, int height, List{GenPass} tasks, Action load = null, Action unload = null, ModWorld modWorld = null, bool saveSubworld = false, bool disablePlayerSaving = false, bool saveModData = false, bool noWorldUpdate = true, UserInterface loadingUI = null, Func{UIState} loadingUIState = null, Func{UIState} votingUI = null, ushort votingDuration = 1800, Action onVotedFor = null<br/>"Enter", string id<br/>"Exit"<br/>"IsActive", string id<br/>"AnyActive", Mod mod<br/>"DrawMenu", bool (optional)<br/>"DrawUnderworldBackground", bool (optional)
             </summary>
             <param name="args"></param>
             <returns></returns>
@@ -33,7 +33,7 @@
         </member>
         <member name="P:SubworldLibrary.Subworld.tasks">
             <summary>
-            The subworld's generation tasks.
+            A list of the subworld's generation tasks.
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.Load">
@@ -109,6 +109,20 @@
             </summary>
             <typeparam name="T"></typeparam>
             <param name="noVote"></param>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.VoteFor(Terraria.UI.UIMouseEvent,Terraria.UI.UIElement)">
+            <summary>
+            Casts a vote, and closes the UI. Use this if you're using a custom voting UI.
+            </summary>
+            <param name="evt"></param>
+            <param name="listeningElement"></param>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.VoteAgainst(Terraria.UI.UIMouseEvent,Terraria.UI.UIElement)">
+            <summary>
+            Casts a vote, and closes the UI. Use this if you're using a custom voting UI.
+            </summary>
+            <param name="evt"></param>
+            <param name="listeningElement"></param>
         </member>
         <member name="M:SubworldLibrary.Subworld.Exit(System.Boolean)">
             <summary>
