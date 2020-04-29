@@ -1,0 +1,8 @@
+displayName = WeakRef ExampleMod for SubworldLibrary
+author = direwolf420
+version = 0.1
+hideCode = false
+hideResources = false
+buildIgnore = *.csproj, *.user, *.md, obj\*, bin\*, .vs\*
+weakReferences = SubworldLibrary
+homepage = https://github.com/jjohnsnaill/SubworldLibrary/wiki
