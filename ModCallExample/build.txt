@@ -1,4 +1,4 @@
-displayName = WeakRef ExampleMod for SubworldLibrary
+displayName = Mod.Call ExampleMod for SubworldLibrary
 author = direwolf420
 version = 0.1
 hideCode = false

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Terraria.ModLoader;
 
-namespace WeakRefExampleMod
+namespace ModCallExample
 {
 	public class SubworldGlobalNPC : GlobalNPC
 	{

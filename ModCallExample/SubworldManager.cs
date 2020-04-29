@@ -6,12 +6,13 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.World.Generation;
 
-namespace WeakRefExampleMod
+namespace ModCallExample
 {
+	//This class showcases how to organize your SubworldLibrary reference
 	public static class SubworldManager
 	{
 		//How we identify our world
-		public static string mySubworldID = string.Empty;
+		public static string mySubworldID = string.Empty; //An empty string will not cause any problems in Enter, IsActive etc. calls
 
 		#region Helper fields and methods
 		public static Mod subworldLibrary = null;
@@ -43,7 +44,7 @@ namespace WeakRefExampleMod
 		}
 		#endregion
 
-		//Call this in WeakRefExampleMod.PostSetupContent()
+		//Call this in ModCallExampleMod.PostSetupContent()
 		public static void Load()
 		{
 			subworldLibrary = ModLoader.GetMod("SubworldLibrary");
@@ -51,11 +52,11 @@ namespace WeakRefExampleMod
 			{
 				object result = subworldLibrary.Call(
 					"Register",
-					/*Mod mod*/ ModContent.GetInstance<WeakRefExampleMod>(),
+					/*Mod mod*/ ModContent.GetInstance<ModCallExampleMod>(),
 					/*string name*/ "MySubworld",
 					/*int width*/ 600,
 					/*int height*/ 400,
-					/*List<GenPass> tasks*/ MyDimensionGenPassList(),
+					/*List<GenPass> tasks*/ MySubworldGenPassList(),
 					/*the following ones are optional, I've included three here (technically two but since order matters, had to pass null for the unload argument)
 					/*Action load*/ (Action)LoadWorld,
 					/*Action unload*/ null,
@@ -69,7 +70,7 @@ namespace WeakRefExampleMod
 			}
 		}
 
-		//Call this in WeakRefExampleMod.Unload()
+		//Call this in ModCallExampleMod.Unload()
 		public static void Unload()
 		{
 			subworldLibrary = null;
@@ -84,7 +85,7 @@ namespace WeakRefExampleMod
 		}
 
 		//Called in subworldLibrary.Call()
-		public static List<GenPass> MyDimensionGenPassList()
+		public static List<GenPass> MySubworldGenPassList()
 		{
 			List<GenPass> list = new List<GenPass>
 			{
