@@ -4,193 +4,137 @@
         <name>SubworldLibrary</name>
     </assembly>
     <members>
-        <member name="M:SubworldLibrary.SubworldLibrary.Call(System.Object[])">
+        <member name="P:SubworldLibrary.Subworld.Width">
             <summary>
-            Available commands:<br/>"Register", Mod mod, string name, int width, int height, List{GenPass} tasks, Action load = null, Action unload = null, ModWorld modWorld = null, bool saveSubworld = false, bool disablePlayerSaving = false, bool saveModData = false, bool noWorldUpdate = true, UserInterface loadingUI = null, Func{UIState} loadingUIState = null, Func{UIState} votingUI = null, ushort votingDuration = 1800, Action onVotedFor = null<br/>"Enter", string id<br/>"Exit"<br/>"IsActive", string id<br/>"AnyActive", Mod mod<br/>"DrawMenu", bool (optional)<br/>"DrawUnderworldBackground", bool (optional)
-            </summary>
-            <param name="args"></param>
-            <returns></returns>
-        </member>
-        <member name="P:SubworldLibrary.Subworld.Name">
-            <summary>
-            Returns the translation key for this subworld.
+            The subworld's width.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.Current">
+        <member name="P:SubworldLibrary.Subworld.Height">
             <summary>
-            Returns the ID of the current subworld, or null if not in a subworld.
+            The subworld's height.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.width">
+        <member name="P:SubworldLibrary.Subworld.Tasks">
             <summary>
-            The subworld's width. Cannot exceed 8400.
+            The subworld's generation tasks.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.height">
-            <summary>
-            The subworld's height. Cannot exceed 2400.
-            </summary>
-        </member>
-        <member name="P:SubworldLibrary.Subworld.tasks">
-            <summary>
-            A list of the subworld's generation tasks.
-            </summary>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.Load">
-            <summary>
-            Called after the subworld has generated or loaded from file.
-            </summary>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.Unload">
-            <summary>
-            Called when exiting the subworld.
-            </summary>
-        </member>
-        <member name="P:SubworldLibrary.Subworld.modWorld">
-            <summary>
-            Only the specified ModWorld can update inside the subworld. If set to null, any ModWorld can update. Default: null
-            </summary>
-        </member>
-        <member name="P:SubworldLibrary.Subworld.saveSubworld">
+        <member name="P:SubworldLibrary.Subworld.ShouldSave">
             <summary>
             Whether the subworld should save or not. Default: false
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.disablePlayerSaving">
+        <member name="P:SubworldLibrary.Subworld.NoPlayerSaving">
             <summary>
-            Disables player saving while in the subworld. Default: false
+            Reverts changes to players when they leave the subworld. Default: false
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.saveModData">
+        <member name="P:SubworldLibrary.Subworld.NormalUpdates">
             <summary>
-            Whether ModWorld data should save with the subworld or not. if modWorld is not set to null, only the specified ModWorld's data will save. Default: false
+            Completely disables vanilla world updating in the subworld. Do not enable unless you are replicating a standard world! Default: false
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.noWorldUpdate">
+        <member name="M:SubworldLibrary.Subworld.OnEnter">
             <summary>
-            Completely disables vanilla world updating in the subworld. Default: true
+            Called when entering a subworld. Before this is called, the return button and underworld's visibility are reset.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.loadingUI">
+        <member name="M:SubworldLibrary.Subworld.OnExit">
             <summary>
-            Change this to your own UserInterface if you want the subworld's custom UI to persist after the subworld loads/unloads. Default: Main.MenuUI
+            Called when exiting a subworld. After this is called, the return button and underworld's visibility are reset.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.loadingUIState">
+        <member name="M:SubworldLibrary.Subworld.OnLoad">
             <summary>
-            Change this if you want the subworld to have a custom loading/unloading UI, instead of the default (UIDefaultSubworldLoad).
+            Called after the subworld generates or loads from file.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.votingUI">
+        <member name="M:SubworldLibrary.Subworld.OnUnload">
             <summary>
-            Change this if you want the subworld to have a custom voting UI, instead of the default (UIDefaultVoting).
+            Called while leaving the subworld, before a different world generates or loads from file.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.Subworld.votingDuration">
+        <member name="M:SubworldLibrary.Subworld.DrawSetup(Microsoft.Xna.Framework.GameTime)">
             <summary>
-            How long voting to enter or leave the subworld lasts. Default: 1800 (30 seconds)
+            Corrects zoom and clears the screen, then calls DrawMenu and draws the cursor.
+            </summary>
+            <code>
+            PlayerInput.SetZoom_Unscaled();
+            Main.instance.GraphicsDevice.Clear(Color.Black);
+            Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, DepthStencilState.None, Main.Rasterizer, null, Main.UIScaleMatrix);
+            DrawMenu(gameTime);
+            Main.DrawCursor(Main.DrawThickCursor());
+            Main.spriteBatch.End();
+            </code>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.DrawMenu(Microsoft.Xna.Framework.GameTime)">
+            <summary>
+            Called by DrawSetup to draw the subworld's loading menu. Defaults to text on a black background.
             </summary>
         </member>
-        <member name="M:SubworldLibrary.Subworld.OnVotedFor">
+        <member name="M:SubworldLibrary.Subworld.GetLight(Terraria.Tile,System.Int32,System.Int32,Terraria.Utilities.FastRandom@,Microsoft.Xna.Framework.Vector3@)">
             <summary>
-            Called on the server when the subworld is voted for. If overridden, it is no longer immediately entered. Useful for making something like a pre-enter animation.
+            Controls how a tile in the subworld is lit. Return true to disable vanilla behaviour. Default: false
             </summary>
         </member>
-        <member name="M:SubworldLibrary.Subworld.Enter(System.String,System.Boolean)">
+        <member name="F:SubworldLibrary.SubworldSystem.playerLocations">
             <summary>
-            Enters the subworld with the specified ID. If called client-side, the ID is passed on to the server. The voting process is skipped if noVote is set to true.
-            </summary>
-            <param name="id"></param>
-            <param name="noVote"></param>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.Enter``1(System.Boolean)">
-            <summary>
-            Enters the specified subworld. If called client-side, the subworld's ID is passed on to the server. The voting process is skipped if noVote is set to true.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="noVote"></param>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.VoteFor(Terraria.UI.UIMouseEvent,Terraria.UI.UIElement)">
-            <summary>
-            Casts a vote, and closes the UI. Use this if you're using a custom voting UI.
-            </summary>
-            <param name="evt"></param>
-            <param name="listeningElement"></param>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.VoteAgainst(Terraria.UI.UIMouseEvent,Terraria.UI.UIElement)">
-            <summary>
-            Casts a vote, and closes the UI. Use this if you're using a custom voting UI.
-            </summary>
-            <param name="evt"></param>
-            <param name="listeningElement"></param>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.Exit(System.Boolean)">
-            <summary>
-            Exits the current subworld. The voting process is skipped if noVote is set to true.
-            </summary>
-            <param name="noVote"></param>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.IsActive(System.String)">
-            <summary>
-            Returns true if the current subworld's ID matches the specified ID.
-            </summary>
-            <param name="id"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.IsActive``1">
-            <summary>
-            Returns true if the specified subworld is currently active.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <returns></returns>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.AnyActive(Terraria.ModLoader.Mod)">
-            <summary>
-            Returns true if the current subworld is from the specified mod.
-            </summary>
-            <param name="mod"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.AnyActive``1">
-            <summary>
-            Returns true if the current subworld is from the specified mod.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <returns></returns>
-        </member>
-        <member name="F:SubworldLibrary.SLWorld.subworld">
-            <summary>
-            Whether the current world is a subworld or not.
+            Used by the main server to direct packets for a client to the subserver the client is in.
             </summary>
         </member>
-        <member name="F:SubworldLibrary.SLWorld.currentSubworld">
+        <member name="F:SubworldLibrary.SubworldSystem.noReturn">
+            <summary>
+            Hides the Return button. Its value is reset before OnEnter is called, and after OnExit is called.
+            </summary>
+        </member>
+        <member name="F:SubworldLibrary.SubworldSystem.hideUnderworld">
+            <summary>
+            Hides the Underworld background. Its value is reset before OnEnter is called, and after OnExit is called.
+            </summary>
+        </member>
+        <member name="P:SubworldLibrary.SubworldSystem.Current">
             <summary>
             The current subworld.
             </summary>
         </member>
-        <member name="P:SubworldLibrary.SLWorld.progress">
+        <member name="M:SubworldLibrary.SubworldSystem.IsActive(System.String)">
             <summary>
-            The generation progress of the current subworld, or null if there's no generation going on.
+            Returns true if the current subworld's ID matches the specified ID.
             </summary>
         </member>
-        <member name="F:SubworldLibrary.SLWorld.drawUnderworldBackground">
+        <member name="M:SubworldLibrary.SubworldSystem.IsActive``1">
             <summary>
-            Whether the Underworld background should draw or not.
+            Returns true if the specified subworld is active.
             </summary>
         </member>
-        <member name="F:SubworldLibrary.SLWorld.drawMenu">
+        <member name="M:SubworldLibrary.SubworldSystem.AnyActive(Terraria.ModLoader.Mod)">
             <summary>
-            Whether the main menu should draw or not.
+            Returns true if the current subworld is from the specified mod.
             </summary>
         </member>
-        <member name="F:SubworldLibrary.SLWorld.noReturn">
+        <member name="M:SubworldLibrary.SubworldSystem.AnyActive``1">
             <summary>
-            Whether the Save &amp; Exit button should be visible or not.
+            Returns true if the current subworld is from the specified mod.
             </summary>
         </member>
-        <member name="F:SubworldLibrary.SLWorld.origin">
+        <member name="P:SubworldLibrary.SubworldSystem.CurrentPath">
             <summary>
-            The location of the main world file.
+            The current subworld's file path.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.Enter(System.String)">
+            <summary>
+            Tries to enter a subworld with the specified ID.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.Enter``1">
+            <summary>
+            Enters the specified subworld.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.Exit">
+            <summary>
+            Exits the current subworld.
             </summary>
         </member>
     </members>

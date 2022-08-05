@@ -1,30 +1,22 @@
 # SubworldLibrary
 Dimensions, made easy.
 
-Subworld Library allows you to easily add dimensions (referred to as subworlds), handling most of the hard work, including loading, saving, and Multiplayer compatibility.
+A tool for modders to easily add dimensions (referred to as subworlds) to their mods, making all the necessary code injections, handling Multiplayer and managing every subworld.
 
-What it does, in more detail:
+Report issues here, or on the forum page: https://forums.terraria.org/index.php?threads/86283
 
-- Registering
+Wiki: https://github.com/jjohnsnaill/SubworldLibrary/wiki
 
-Any class that derives from the Subworld class is automatically registered as a subworld. Subworlds are highly customisable; from their size and how they generate, to whether they or the players inside of them save, to even what ModWorld is allowed to update while inside of them. Registering a subworld without directly referencing Subworld Library is also possible, via Mod.Call.
+## HOW IT WORKS
+Subworld Library does a LOT of code injection, as Terraria was not made with subworlds in mind.
+Subworlds are highly customisable; from how big or small they are, to what ModSystems can update inside of them and even how they are lit.
+Subworld Library removes Space, both Oceans and the Underworld from subworlds, allowing them to be extremely small without issues.
 
-- Loading
+## LOADING
+Loading a subworld is straightforward. Loading screens can be as simple as text on a plain background, or something complex, like an item selection menu.
 
-Loading a subworld is as simple as calling "Subworld.Enter". Each subworld can have a custom loading UI if its class overrides "loadingUIState". The UI can even persist after the world is loaded if "loadingUI" is overridden.
+## SAVING
+Subworlds save to a directory named after the main world. A subworld and/or changes to players inside it can be temporary. Deleting a world deletes all of its subworlds as well.
 
-- Saving
-
-Subworlds can be set to be either temporary or permanent. Subworlds can also prevent players from saving while inside them. Subworld Library also handles deleting subworlds when their main world is deleted.
-
-- Multiplayer
-
-Subworld Library doesn't just handle loading, saving, etc. in Singleplayer; it also does so in Multiplayer, with little to no extra work required on your end. By default, players vote on whether to enter/leave a subworld, preventing any unwanted entries or exits.
-
-- Misc.
-
-Subworld Library gets rid of Space, the Underworld, and both Oceans inside subworlds, freeing up tons of world space, and allowing for very small subworlds.
-
-If you need help with making a subworld, or encounter a bug, please go to the #sublib channel in the GaMeterraria Discord.
-
-https://discord.gg/zumQztb
+## MULTIPLAYER
+Subworld Library works in Multiplayer with little to no extra work required from modders. A server is opened for every subworld being occupied.
