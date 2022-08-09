@@ -830,7 +830,12 @@ namespace SubworldLibrary
 
 	public abstract class Subworld : ModType
 	{
-		protected sealed override void Register() => SubworldSystem.subworlds.Add(this);
+		protected sealed override void Register()
+		{
+			SubworldSystem.subworlds.Add(this);
+			ModTypeLookup<Subworld>.Register(this);
+		}
+
 		public sealed override void SetupContent() => SetStaticDefaults();
 
 		public abstract int Width { get; }
