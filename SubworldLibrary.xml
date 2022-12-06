@@ -21,27 +21,61 @@
         </member>
         <member name="P:SubworldLibrary.Subworld.ShouldSave">
             <summary>
-            Whether the subworld should save or not. Default: false
+            Whether the subworld should save or not.
+            <br/>Default: false
             </summary>
         </member>
         <member name="P:SubworldLibrary.Subworld.NoPlayerSaving">
             <summary>
-            Reverts changes to players when they leave the subworld. Default: false
+            Reverts changes to players when they leave the subworld.
+            <br/>Default: false
             </summary>
         </member>
         <member name="P:SubworldLibrary.Subworld.NormalUpdates">
             <summary>
-            Completely disables vanilla world updating in the subworld. Do not enable unless you are replicating a standard world! Default: false
+            Completely disables vanilla world updating in the subworld.
+            <br/>Do not enable unless you are replicating a standard world!
+            <br/>Default: false
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.OnEnter">
             <summary>
-            Called when entering a subworld. Before this is called, the return button and underworld's visibility are reset.
+            Called when entering a subworld.
+            <br/>Before this is called, the return button and underworld's visibility are reset.
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.OnExit">
             <summary>
-            Called when exiting a subworld. After this is called, the return button and underworld's visibility are reset.
+            Called when exiting a subworld.
+            <br/>After this is called, the return button and underworld's visibility are reset.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.CopyMainWorldData">
+            <summary>
+            Called on all subworlds before <see cref="M:SubworldLibrary.Subworld.OnEnter"/>, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
+            <br/>This is where you copy data from the main world to the subworld, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
+            <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.CopySubworldData">
+            <summary>
+            Called before <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
+            <br/>This is where you copy data from the subworld to another world, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
+            <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.ReadCopiedMainWorldData">
+            <summary>
+            Called on all subworlds before one generates, or after one loads from file.
+            <br/>This is where you read data copied from the main world to the subworld, via <see cref="M:SubworldLibrary.SubworldSystem.ReadCopiedWorldData``1(System.String)"/>.
+            <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.ReadCopiedSubworldData">
+            <summary>
+            Called while leaving the subworld, either before a different world generates, or after a different world loads from file.
+            <br/>This is where you read data copied from the subworld to another world, via <see cref="M:SubworldLibrary.SubworldSystem.ReadCopiedWorldData``1(System.String)"/>.
+            <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.OnLoad">
@@ -51,13 +85,23 @@
         </member>
         <member name="M:SubworldLibrary.Subworld.OnUnload">
             <summary>
-            Called while leaving the subworld, before a different world generates or loads from file.
+            Called while leaving the subworld, before a different world either generates or loads from file.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.ReadFile(System.IO.BinaryReader)">
+            <summary>
+            Requires knowledge of how vanilla world file loading works to use properly! Only override this if you know what you are doing.
+            </summary>
+            <returns>The exit status. A number above 0 indicates that world file reading has failed.</returns>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.PostReadFile">
+            <summary>
+            Requires knowledge of how vanilla world file loading works to use properly! Only override this if you know what you are doing.
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.DrawSetup(Microsoft.Xna.Framework.GameTime)">
             <summary>
             Corrects zoom and clears the screen, then calls DrawMenu and draws the cursor.
-            </summary>
             <code>
             PlayerInput.SetZoom_Unscaled();
             Main.instance.GraphicsDevice.Clear(Color.Black);
@@ -66,30 +110,31 @@
             Main.DrawCursor(Main.DrawThickCursor());
             Main.spriteBatch.End();
             </code>
+            </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.DrawMenu(Microsoft.Xna.Framework.GameTime)">
             <summary>
-            Called by DrawSetup to draw the subworld's loading menu. Defaults to text on a black background.
+            Called by DrawSetup to draw the subworld's loading menu.
+            <br/>Defaults to text on a black background.
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.GetLight(Terraria.Tile,System.Int32,System.Int32,Terraria.Utilities.FastRandom@,Microsoft.Xna.Framework.Vector3@)">
             <summary>
-            Controls how a tile in the subworld is lit. Return true to disable vanilla behaviour. Default: false
-            </summary>
-        </member>
-        <member name="F:SubworldLibrary.SubworldSystem.playerLocations">
-            <summary>
-            Used by the main server to direct packets for a client to the subserver the client is in.
+            Controls how a tile in the subworld is lit.
+            <br/>Return true to disable vanilla behaviour.
+            <br/>Default: false
             </summary>
         </member>
         <member name="F:SubworldLibrary.SubworldSystem.noReturn">
             <summary>
-            Hides the Return button. Its value is reset before OnEnter is called, and after OnExit is called.
+            Hides the Return button.
+            <br/>Its value is reset before <see cref="M:SubworldLibrary.Subworld.OnEnter"/> is called, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/> is called.
             </summary>
         </member>
         <member name="F:SubworldLibrary.SubworldSystem.hideUnderworld">
             <summary>
-            Hides the Underworld background. Its value is reset before OnEnter is called, and after OnExit is called.
+            Hides the Underworld background.
+            <br/>Its value is reset before <see cref="M:SubworldLibrary.Subworld.OnEnter"/> is called, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/> is called.
             </summary>
         </member>
         <member name="P:SubworldLibrary.SubworldSystem.Current">
@@ -135,6 +180,26 @@
         <member name="M:SubworldLibrary.SubworldSystem.Exit">
             <summary>
             Exits the current subworld.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)">
+            <summary>
+            Can only be called in <see cref="M:SubworldLibrary.Subworld.CopyMainWorldData"/> or <see cref="M:SubworldLibrary.Subworld.OnExit"/>!
+            <br/>Stores data to be transferred between worlds under the specified key, if that key is not already in use.
+            <br/>Naming the key after the variable pointing to the data is highly recommended to avoid redundant copying. This can be done automatically with nameof().
+            <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.ReadCopiedWorldData``1(System.String)">
+            <summary>
+            Can only be called in <see cref="M:SubworldLibrary.Subworld.ReadCopiedMainWorldData"/> or <see cref="M:SubworldLibrary.Subworld.ReadCopiedSubworldData"/>!
+            <br/>Reads data copied from another world stored under the specified key.
+            <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.SendToMainServer(Terraria.ModLoader.Mod,System.Byte[])">
+            <summary>
+            Sends a packet from the specified mod directly to the main server.
             </summary>
         </member>
     </members>
