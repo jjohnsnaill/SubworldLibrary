@@ -1,0 +1,6 @@
+Mods: {
+	SubworldLibrary: {
+		Return: Return
+		Move: "{0} has gone to {1}."
+	}
+}

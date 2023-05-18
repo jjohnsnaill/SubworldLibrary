@@ -4,6 +4,20 @@
         <name>SubworldLibrary</name>
     </assembly>
     <members>
+        <member name="M:SubworldLibrary.ICopyWorldData.CopyMainWorldData">
+            <summary>
+            Called on all content with this interface before <see cref="M:SubworldLibrary.Subworld.OnEnter"/>, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
+            <br/>This is where you copy data from the main world to a subworld, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
+            <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.ICopyWorldData.ReadCopiedMainWorldData">
+            <summary>
+            Called on all content with this interface before a subworld generates, or after a subworld loads from file.
+            <br/>This is where you read data copied from the main world to a subworld, via <see cref="M:SubworldLibrary.SubworldSystem.ReadCopiedWorldData``1(System.String)"/>.
+            <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
+            </summary>
+        </member>
         <member name="P:SubworldLibrary.Subworld.Width">
             <summary>
             The subworld's width.
@@ -17,6 +31,14 @@
         <member name="P:SubworldLibrary.Subworld.Tasks">
             <summary>
             The subworld's generation tasks.
+            </summary>
+        </member>
+        <member name="P:SubworldLibrary.Subworld.ReturnDestination">
+            <summary>
+            The index of the subworld the player will be sent to when choosing to return. See <see cref="M:SubworldLibrary.SubworldSystem.GetIndex``1"/>.
+            <br/>Set to -1 to send the player back to the main world.
+            <br/>Set to <see cref="F:System.Int32.MinValue"/> to send the player to the main menu.
+            <br/>Default: -1
             </summary>
         </member>
         <member name="P:SubworldLibrary.Subworld.ShouldSave">
@@ -35,6 +57,13 @@
             <summary>
             Completely disables vanilla world updating in the subworld.
             <br/>Do not enable unless you are replicating a standard world!
+            <br/>Default: false
+            </summary>
+        </member>
+        <member name="P:SubworldLibrary.Subworld.ManualAudioUpdates">
+            <summary>
+            If <see cref="M:SubworldLibrary.Subworld.ChangeAudio"/> returns true, this completely disables vanilla audio updating.
+            <br/>Typically not required. Only enable this if you know what you are doing.
             <br/>Default: false
             </summary>
         </member>
@@ -118,6 +147,19 @@
             <br/>Defaults to text on a black background.
             </summary>
         </member>
+        <member name="M:SubworldLibrary.Subworld.ChangeAudio">
+            <summary>
+            Called before music is chosen, including in the loading menu.
+            <br/>Return true to disable vanilla behaviour, allowing for modification of variables such as <see cref="F:Terraria.Main.newMusic"/>.
+            <br/>Default: false
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.Subworld.GetGravity(Terraria.Entity)">
+            <summary>
+            Controls the gravity of an entity in the subworld.
+            <br/>Default: 1
+            </summary>
+        </member>
         <member name="M:SubworldLibrary.Subworld.GetLight(Terraria.Tile,System.Int32,System.Int32,Terraria.Utilities.FastRandom@,Microsoft.Xna.Framework.Vector3@)">
             <summary>
             Controls how a tile in the subworld is lit.
@@ -145,6 +187,7 @@
         <member name="M:SubworldLibrary.SubworldSystem.IsActive(System.String)">
             <summary>
             Returns true if the current subworld's ID matches the specified ID.
+            <code>SubworldSystem.IsActive("MyMod/MySubworld")</code>
             </summary>
         </member>
         <member name="M:SubworldLibrary.SubworldSystem.IsActive``1">
@@ -169,7 +212,8 @@
         </member>
         <member name="M:SubworldLibrary.SubworldSystem.Enter(System.String)">
             <summary>
-            Tries to enter a subworld with the specified ID.
+            Tries to enter the subworld with the specified ID.
+            <code>SubworldSystem.Enter("MyMod/MySubworld")</code>
             </summary>
         </member>
         <member name="M:SubworldLibrary.SubworldSystem.Enter``1">
@@ -180,6 +224,20 @@
         <member name="M:SubworldLibrary.SubworldSystem.Exit">
             <summary>
             Exits the current subworld.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.GetIndex(System.String)">
+            <summary>
+            Tries to get the index of the subworld with the specified ID.
+            <br/> Typically used for <see cref="P:SubworldLibrary.Subworld.ReturnDestination"/>.
+            <br/> Returns <see cref="F:System.Int32.MinValue"/> if the subworld couldn't be found.
+            <code>public override int ReturnDestination => SubworldSystem.GetIndex("MyMod/MySubworld");</code>
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.GetIndex``1">
+            <summary>
+            Gets the index of the specified subworld.
+            <br/> Typically used for <see cref="P:SubworldLibrary.Subworld.ReturnDestination"/>.
             </summary>
         </member>
         <member name="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)">
