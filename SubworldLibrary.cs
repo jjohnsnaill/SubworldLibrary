@@ -1,7 +1,8 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Mono.Cecil.Cil;
 using MonoMod.Cil;
-using MonoMod.RuntimeDetour.HookGen;
+using MonoMod.RuntimeDetour;
 using ReLogic.Graphics;
 using System;
 using System.Collections.Generic;
@@ -14,7 +15,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Terraria;
 using Terraria.Audio;
+using Terraria.Chat;
 using Terraria.GameContent;
+using Terraria.GameContent.Bestiary;
+using Terraria.GameContent.Creative;
 using Terraria.GameContent.Events;
 using Terraria.GameContent.NetModules;
 using Terraria.GameInput;
@@ -35,34 +39,11 @@ namespace SubworldLibrary
 {
 	public class SubworldLibrary : Mod
 	{
-		private static event ILContext.Manipulator AsyncSend
-		{
-			add
-			{
-				HookEndpointManager.Modify(typeof(SocialSocket).GetMethod("Terraria.Net.Sockets.ISocket.AsyncSend", BindingFlags.NonPublic | BindingFlags.Instance), value);
-				HookEndpointManager.Modify(typeof(TcpSocket).GetMethod("Terraria.Net.Sockets.ISocket.AsyncSend", BindingFlags.NonPublic | BindingFlags.Instance), value);
-			}
-			remove
-			{
-				HookEndpointManager.Unmodify(typeof(SocialSocket).GetMethod("Terraria.Net.Sockets.ISocket.AsyncSend", BindingFlags.NonPublic | BindingFlags.Instance), value);
-				HookEndpointManager.Unmodify(typeof(TcpSocket).GetMethod("Terraria.Net.Sockets.ISocket.AsyncSend", BindingFlags.NonPublic | BindingFlags.Instance), value);
-			}
-		}
+		private static ILHook tcpSocketHook;
+		private static ILHook socialSocketHook;
 
 		public override void Load()
 		{
-			ModTranslation translation = LocalizationLoader.CreateTranslation("Mods.SubworldLibrary.Return");
-			translation.AddTranslation(1, "Return");
-			translation.AddTranslation(2, "Wiederkehren");
-			translation.AddTranslation(3, "Ritorno");
-			translation.AddTranslation(4, "Retour");
-			translation.AddTranslation(5, "Regresar");
-			translation.AddTranslation(6, "\u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0442\u044C\u0441\u044F");
-			translation.AddTranslation(7, "\u8FD4\u56DE");
-			translation.AddTranslation(8, "Regressar");
-			translation.AddTranslation(9, "Wraca\u0107");
-			LocalizationLoader.AddTranslation(translation);
-
 			FieldInfo current = typeof(SubworldSystem).GetField("current", BindingFlags.NonPublic | BindingFlags.Static);
 			FieldInfo cache = typeof(SubworldSystem).GetField("cache", BindingFlags.NonPublic | BindingFlags.Static);
 			FieldInfo hideUnderworld = typeof(SubworldSystem).GetField("hideUnderworld");
@@ -71,20 +52,19 @@ namespace SubworldLibrary
 
 			if (Main.dedServ)
 			{
-				IL.Terraria.Main.DedServ_PostModLoad += il =>
+				IL_Main.DedServ_PostModLoad += il =>
 				{
 					ConstructorInfo gameTime = typeof(GameTime).GetConstructor(Type.EmptyTypes);
 					MethodInfo update = typeof(Main).GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance);
 					FieldInfo saveTime = typeof(Main).GetField("saveTime", BindingFlags.NonPublic | BindingFlags.Static);
 
 					var c = new ILCursor(il);
-
 					if (!c.TryGotoNext(MoveType.After, i => i.MatchStindI1()))
 					{
 						return;
 					}
 
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldSystem).GetMethod("LoadIntoSubworld", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("LoadIntoSubworld", BindingFlags.NonPublic | BindingFlags.Static));
 					var skip = c.DefineLabel();
 					c.Emit(Brfalse, skip);
 
@@ -111,7 +91,7 @@ namespace SubworldLibrary
 					var loop = c.DefineLabel();
 					c.MarkLabel(loop);
 
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(Main).Assembly.GetType("Terraria.ModLoader.Engine.ServerHangWatchdog").GetMethod("Checkin", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(OpCodes.Call, typeof(Main).Assembly.GetType("Terraria.ModLoader.Engine.ServerHangWatchdog").GetMethod("Checkin", BindingFlags.NonPublic | BindingFlags.Static));
 
 					c.Emit(Ldsfld, typeof(Netplay).GetField("HasClients"));
 					var label = c.DefineLabel();
@@ -138,7 +118,7 @@ namespace SubworldLibrary
 					c.Emit(Ldloc_1);
 					c.Emit(Ldloc_2);
 					c.Emit(Ldloca, 3);
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldLibrary).GetMethod("Sleep", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("Sleep", BindingFlags.NonPublic | BindingFlags.Static));
 
 					c.MarkLabel(loopStart);
 
@@ -152,17 +132,15 @@ namespace SubworldLibrary
 
 				if (!Program.LaunchParameters.ContainsKey("-subworld"))
 				{
-					IL.Terraria.NetMessage.CheckBytes += il =>
+					IL_NetMessage.CheckBytes += il =>
 					{
-						var c = new ILCursor(il);
-
-						if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(BitConverter), "ToUInt16")) || !c.Instrs[c.Index].MatchStloc(out int index))
+						ILCursor c, cc;
+						if (!(c = new ILCursor(il)).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(BitConverter), "ToUInt16"))
+						|| !c.Instrs[c.Index].MatchStloc(out int index)
+						|| !c.TryGotoNext(MoveType.After, i => i.MatchCallvirt(typeof(Stream), "get_Position"), i => i.MatchStloc(out _))
+						|| !(cc = c.Clone()).TryGotoNext(i => i.MatchLdsfld(typeof(NetMessage), "buffer"), i => i.MatchLdarg(0), i => i.MatchLdelemRef(), i => i.MatchLdfld(typeof(MessageBuffer), "reader")))
 						{
-							return;
-						}
-
-						if (!c.TryGotoNext(MoveType.After, i => i.MatchCallvirt(typeof(Stream), "get_Position"), i => i.MatchStloc(out _)))
-						{
+							Logger.Error("FAILED:");
 							return;
 						}
 
@@ -171,42 +149,44 @@ namespace SubworldLibrary
 						c.Emit(Ldelem_Ref);
 						c.Emit(Ldloc_2);
 						c.Emit(Ldloc, index);
-						c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldLibrary).GetMethod("DenyRead"));
+						c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("DenyRead", BindingFlags.NonPublic | BindingFlags.Static));
 
 						var label = c.DefineLabel();
 						c.Emit(Brtrue, label);
 
-						if (!c.TryGotoNext(i => i.MatchLdsfld(typeof(NetMessage), "buffer"), i => i.MatchLdarg(0), i => i.MatchLdelemRef(), i => i.MatchLdfld(typeof(MessageBuffer), "reader")))
+						cc.MarkLabel(label);
+					};
+
+					socialSocketHook = new ILHook(typeof(SocialSocket).GetMethod("Terraria.Net.Sockets.ISocket.AsyncSend", BindingFlags.NonPublic | BindingFlags.Instance), AsyncSend);
+					tcpSocketHook = new ILHook(typeof(TcpSocket).GetMethod("Terraria.Net.Sockets.ISocket.AsyncSend", BindingFlags.NonPublic | BindingFlags.Instance), AsyncSend);
+
+					void AsyncSend(ILContext il)
+					{
+						var c = new ILCursor(il);
+						if (!c.TryGotoNext(MoveType.After, i => i.MatchRet()))
 						{
 							return;
 						}
-
-						c.MarkLabel(label);
-					};
-
-					AsyncSend += il =>
-					{
-						var c = new ILCursor(il);
+						c.MoveAfterLabels();
 
 						c.Emit(Ldarg_0);
 						c.Emit(Ldarg_1);
 						c.Emit(Ldarg_2);
 						c.Emit(Ldarg_3);
 						c.Emit(Ldarga, 5);
-						c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldLibrary).GetMethod("DenySend"));
+						c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("DenySend", BindingFlags.NonPublic | BindingFlags.Static));
 						var label = c.DefineLabel();
 						c.Emit(Brfalse, label);
 						c.Emit(Ret);
 						c.MarkLabel(label);
-					};
+					}
 				}
 			}
 			else
 			{
-				IL.Terraria.Main.DoDraw += il =>
+				IL_Main.DoDraw += il =>
 				{
 					var c = new ILCursor(il);
-
 					if (!c.TryGotoNext(MoveType.After, i => i.MatchStsfld(typeof(Main), "HoverItem")))
 					{
 						return;
@@ -225,7 +205,7 @@ namespace SubworldLibrary
 					c.Emit(Dup);
 					c.Emit(Stsfld, typeof(Main).GetField("_uiScaleWanted", BindingFlags.NonPublic | BindingFlags.Static));
 					c.Emit(Stsfld, typeof(Main).GetField("_uiScaleUsed", BindingFlags.NonPublic | BindingFlags.Static));
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(Matrix).GetMethod("CreateScale", new Type[] { typeof(float) }));
+					c.Emit(OpCodes.Call, typeof(Matrix).GetMethod("CreateScale", new Type[] { typeof(float) }));
 					c.Emit(Stsfld, typeof(Main).GetField("_uiScaleMatrix", BindingFlags.NonPublic | BindingFlags.Static));
 
 					c.Emit(Ldsfld, current);
@@ -243,7 +223,7 @@ namespace SubworldLibrary
 					c.Emit(Dup);
 					c.Emit(Stsfld, typeof(Main).GetField("_uiScaleWanted", BindingFlags.NonPublic | BindingFlags.Static));
 					c.Emit(Stsfld, typeof(Main).GetField("_uiScaleUsed", BindingFlags.NonPublic | BindingFlags.Static));
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(Matrix).GetMethod("CreateScale", new Type[] { typeof(float) }));
+					c.Emit(OpCodes.Call, typeof(Matrix).GetMethod("CreateScale", new Type[] { typeof(float) }));
 					c.Emit(Stsfld, typeof(Main).GetField("_uiScaleMatrix", BindingFlags.NonPublic | BindingFlags.Static));
 
 					c.Emit(Ldsfld, cache);
@@ -254,12 +234,13 @@ namespace SubworldLibrary
 					c.MarkLabel(skip);
 				};
 
-				IL.Terraria.Main.DrawBackground += il =>
+				IL_Main.DrawBackground += il =>
 				{
-					var c = new ILCursor(il);
-
-					if (!c.TryGotoNext(i => i.MatchLdcI4(330)))
+					ILCursor c, cc;
+					if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchLdcI4(330))
+					|| !(cc = c.Clone()).TryGotoNext(i => i.MatchStloc(out _), i => i.MatchLdcR4(255)))
 					{
+						Logger.Error("FAILED:");
 						return;
 					}
 
@@ -273,20 +254,16 @@ namespace SubworldLibrary
 
 					c.MarkLabel(skip);
 
-					if (!c.TryGotoNext(i => i.MatchStloc(2), i => i.MatchLdcR4(255)))
-					{
-						return;
-					}
-
-					c.MarkLabel(label);
+					cc.MarkLabel(label);
 				};
 
-				IL.Terraria.Main.OldDrawBackground += il =>
+				IL_Main.OldDrawBackground += il =>
 				{
-					var c = new ILCursor(il);
-
-					if (!c.TryGotoNext(i => i.MatchLdcI4(230)))
+					ILCursor c, cc;
+					if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchLdcI4(230))
+					|| !(cc = c.Clone()).TryGotoNext(i => i.MatchStloc(18), i => i.MatchLdcI4(0)))
 					{
+						Logger.Error("FAILED:");
 						return;
 					}
 
@@ -300,78 +277,84 @@ namespace SubworldLibrary
 
 					c.MarkLabel(skip);
 
-					if (!c.TryGotoNext(i => i.MatchStloc(18), i => i.MatchLdcI4(0)))
-					{
-						return;
-					}
-
-					c.MarkLabel(label);
+					cc.MarkLabel(label);
 				};
 
-				IL.Terraria.IngameOptions.Draw += il =>
+				IL_Main.UpdateAudio += il =>
 				{
-					var c = new ILCursor(il);
-
-					if (!c.TryGotoNext(i => i.MatchLdsfld(typeof(Lang), "inter"), i => i.MatchLdcI4(35)))
+					ILCursor c, cc;
+					if (!(c = new ILCursor(il)).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(typeof(Main), "swapMusic"))
+					|| !(cc = c.Clone()).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(Main), "UpdateAudio_DecideOnNewMusic"))
+					|| !cc.Instrs[cc.Index].MatchBr(out ILLabel label))
 					{
+						Logger.Error("FAILED:");
 						return;
 					}
 
-					c.Emit(Ldsfld, current);
+					c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("ChangeAudio", BindingFlags.NonPublic | BindingFlags.Static));
 					var skip = c.DefineLabel();
 					c.Emit(Brfalse, skip);
 
-					c.Emit(Ldstr, "Mods.SubworldLibrary.Return");
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(Language).GetMethod("GetTextValue", new Type[] { typeof(string) }));
-					var label = c.DefineLabel();
-					c.Emit(Br, label);
+					c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("ManualAudioUpdates", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(Brfalse, label);
+
+					var ret = c.DefineLabel();
+					ret.Target = c.Instrs[c.Instrs.Count - 1];
+					c.Emit(Leave, ret);
 
 					c.MarkLabel(skip);
+				};
 
-					if (!c.TryGotoNext(MoveType.After, i => i.MatchCallvirt(typeof(LocalizedText), "get_Value")))
+				IL_IngameOptions.Draw += il =>
+				{
+					ILCursor c, cc, ccc, cccc;
+					if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchLdsfld(typeof(Lang), "inter"), i => i.MatchLdcI4(35))
+					|| !(cc = c.Clone()).TryGotoNext(MoveType.After, i => i.MatchCallvirt(typeof(LocalizedText), "get_Value"))
+					|| !(ccc = cc.Clone()).TryGotoNext(i => i.MatchLdnull(), i => i.MatchCall(typeof(WorldGen), "SaveAndQuit"))
+					|| !(cccc = ccc.Clone()).TryGotoPrev(MoveType.AfterLabel, i => i.MatchLdloc(out _), i => i.MatchLdcI4(1), i => i.MatchAdd(), i => i.MatchStloc(out _)))
 					{
+						Logger.Error("FAILED:");
 						return;
 					}
 
-					c.MarkLabel(label);
+					ccc.Emit(Ldsfld, current);
+					var skip = ccc.DefineLabel();
+					ccc.Emit(Brfalse, skip);
 
-					if (!c.TryGotoNext(i => i.MatchLdnull(), i => i.MatchCall(typeof(WorldGen), "SaveAndQuit")))
-					{
-						return;
-					}
+					ccc.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("Exit"));
+					var label = ccc.DefineLabel();
+					ccc.Emit(Br, label);
+
+					ccc.MarkLabel(skip);
+
+					ccc.Index += 2;
+					ccc.MarkLabel(label);
+
+					cccc.Emit(Ldsfld, typeof(SubworldSystem).GetField("noReturn"));
+					cccc.Emit(Brtrue, label);
 
 					c.Emit(Ldsfld, current);
 					skip = c.DefineLabel();
 					c.Emit(Brfalse, skip);
 
-					c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldSystem).GetMethod("Exit"));
+					c.Emit(Ldstr, "Mods.SubworldLibrary.Return");
+					c.Emit(OpCodes.Call, typeof(Language).GetMethod("GetTextValue", new Type[] { typeof(string) }));
 					label = c.DefineLabel();
 					c.Emit(Br, label);
 
 					c.MarkLabel(skip);
 
-					if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(WorldGen), "SaveAndQuit")))
-					{
-						return;
-					}
-
-					c.MarkLabel(label);
-
-					if (!c.TryGotoPrev(MoveType.AfterLabel, i => i.MatchLdloc(out _), i => i.MatchLdcI4(1), i => i.MatchAdd(), i => i.MatchStloc(out _)))
-					{
-						return;
-					}
-
-					c.Emit(Ldsfld, typeof(SubworldSystem).GetField("noReturn"));
-					c.Emit(Brtrue, label);
+					cc.MarkLabel(label);
 				};
 
-				IL.Terraria.Graphics.Light.TileLightScanner.GetTileLight += il =>
+				IL_TileLightScanner.GetTileLight += il =>
 				{
-					var c = new ILCursor(il);
-
-					if (!c.TryGotoNext(MoveType.After, i => i.MatchStloc(1)))
+					ILCursor c, cc, ccc;
+					if (!(c = new ILCursor(il)).TryGotoNext(MoveType.After, i => i.MatchStloc(1))
+					|| !(cc = c.Clone()).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdarg(2), i => i.MatchCall(typeof(Main), "get_UnderworldLayer"))
+					|| !(ccc = cc.Clone()).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(TileLightScanner), "ApplyHellLight")))
 					{
+						Logger.Error("FAILED:");
 						return;
 					}
 
@@ -392,29 +375,20 @@ namespace SubworldLibrary
 
 					c.MarkLabel(skip);
 
-					if (!c.TryGotoNext(MoveType.AfterLabel, i => i.MatchLdarg(2), i => i.MatchCall(typeof(Main), "get_UnderworldLayer")))
-					{
-						return;
-					}
+					cc.Emit(Ldsfld, hideUnderworld);
+					skip = cc.DefineLabel();
+					cc.Emit(Brtrue, skip);
 
-					c.Emit(Ldsfld, hideUnderworld);
-					skip = c.DefineLabel();
-					c.Emit(Brtrue, skip);
-
-					if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(TileLightScanner), "ApplyHellLight")))
-					{
-						return;
-					}
-
-					c.MarkLabel(skip);
+					ccc.MarkLabel(skip);
 				};
 
-				IL.Terraria.Player.UpdateBiomes += il =>
+				IL_Player.UpdateBiomes += il =>
 				{
-					var c = new ILCursor(il);
-
-					if (!c.TryGotoNext(MoveType.After, i => i.MatchStloc(9)))
+					ILCursor c, cc;
+					if (!(c = new ILCursor(il)).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdloc(out _), i => i.MatchLdfld(typeof(Point), "Y"), i => i.MatchLdsfld(typeof(Main), "maxTilesY"))
+					|| !(cc = c.Clone()).TryGotoNext(i => i.MatchStloc(out _)))
 					{
+						Logger.Error("FAILED:");
 						return;
 					}
 
@@ -428,15 +402,10 @@ namespace SubworldLibrary
 
 					c.MarkLabel(skip);
 
-					if (!c.TryGotoNext(i => i.MatchStloc(10)))
-					{
-						return;
-					}
-
-					c.MarkLabel(label);
+					cc.MarkLabel(label);
 				};
 
-				IL.Terraria.Main.DrawUnderworldBackground += il =>
+				IL_Main.DrawUnderworldBackground += il =>
 				{
 					var c = new ILCursor(il);
 
@@ -447,7 +416,7 @@ namespace SubworldLibrary
 					c.MarkLabel(skip);
 				};
 
-				IL.Terraria.Netplay.AddCurrentServerToRecentList += il =>
+				IL_Netplay.AddCurrentServerToRecentList += il =>
 				{
 					var c = new ILCursor(il);
 
@@ -459,32 +428,33 @@ namespace SubworldLibrary
 				};
 			}
 
-			IL.Terraria.WorldGen.do_worldGenCallBack += il =>
+			IL_WorldGen.do_worldGenCallBack += il =>
 			{
 				var c = new ILCursor(il);
-
-				if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(WorldFile), "saveWorld")))
+				if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(WorldFile), "SaveWorld")))
 				{
+					Logger.Error("FAILED:");
 					return;
 				}
 
-				c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldSystem).GetMethod("GenerateSubworlds", BindingFlags.NonPublic | BindingFlags.Static));
+				c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("GenerateSubworlds", BindingFlags.NonPublic | BindingFlags.Static));
 			};
 
-			IL.Terraria.Main.EraseWorld += il =>
+			IL_Main.EraseWorld += il =>
 			{
 				var c = new ILCursor(il);
 
 				c.Emit(Ldarg_0);
-				c.Emit(Mono.Cecil.Cil.OpCodes.Call, typeof(SubworldSystem).GetMethod("EraseSubworlds", BindingFlags.NonPublic | BindingFlags.Static));
+				c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("EraseSubworlds", BindingFlags.NonPublic | BindingFlags.Static));
 			};
 
-			IL.Terraria.Main.DoUpdateInWorld += il =>
+			IL_Main.DoUpdateInWorld += il =>
 			{
-				var c = new ILCursor(il);
-
-				if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(SystemLoader), "PreUpdateTime")))
+				ILCursor c, cc;
+				if (!(c = new ILCursor(il)).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(SystemLoader), "PreUpdateTime"))
+				|| !(cc = c.Clone()).TryGotoNext(i => i.MatchCall(typeof(SystemLoader), "PostUpdateTime")))
 				{
+					Logger.Error("FAILED:");
 					return;
 				}
 
@@ -499,20 +469,15 @@ namespace SubworldLibrary
 
 				c.MarkLabel(skip);
 
-				if (!c.TryGotoNext(i => i.MatchCall(typeof(SystemLoader), "PostUpdateTime")))
-				{
-					return;
-				}
-
-				c.MarkLabel(label);
+				cc.MarkLabel(label);
 			};
 
-			IL.Terraria.WorldGen.UpdateWorld += il =>
+			IL_WorldGen.UpdateWorld += il =>
 			{
 				var c = new ILCursor(il);
-
 				if (!c.TryGotoNext(i => i.MatchCall(typeof(WorldGen), "UpdateWorld_Inner")))
 				{
+					Logger.Error("FAILED:");
 					return;
 				}
 
@@ -528,16 +493,20 @@ namespace SubworldLibrary
 				c.MarkLabel(skip);
 
 				c.Index++;
-
 				c.MarkLabel(label);
 			};
 
-			IL.Terraria.Player.Update += il =>
-			{
-				var c = new ILCursor(il);
+			IL_Player.Update += il => UpdateGravity(il, 3, i => i.MatchLdarg(0), i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Player), "gravity"));
+			IL_NPC.UpdateNPC_UpdateGravity += il => UpdateGravity(il, 1, i => i.MatchLdsfld(typeof(NPC), "gravity"));
 
-				if (!c.TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(out _), i => i.MatchLdcI4(4200)))
+			void UpdateGravity(ILContext il, int back, params Func<Instruction, bool>[] predicates)
+			{
+				ILCursor c, cc;
+				if (!(c = new ILCursor(il)).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(out _), i => i.MatchConvR4(), i => i.MatchLdcR4(4200))
+				|| !(cc = c.Clone()).TryGotoNext(MoveType.After, predicates)
+				|| !cc.Instrs[cc.Index].MatchLdloc(out int index))
 				{
+					Logger.Error("FAILED:");
 					return;
 				}
 
@@ -548,24 +517,26 @@ namespace SubworldLibrary
 				c.Emit(Ldsfld, current);
 				c.Emit(Callvirt, normalUpdates);
 				var label = c.DefineLabel();
-				c.Emit(Brfalse, label);
+				c.Emit(Brtrue, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Ldarg_0);
+				c.Emit(Callvirt, typeof(Subworld).GetMethod("GetGravity"));
+				c.Emit(Stloc, index);
+				c.Emit(Br, label);
 
 				c.MarkLabel(skip);
 
-				if (!c.TryGotoNext(MoveType.After, i => i.MatchLdloc(3), i => i.MatchMul(), i => i.MatchStfld(typeof(Player), "gravity")))
-				{
-					return;
-				}
+				cc.Index -= back;
+				cc.MarkLabel(label);
+			}
 
-				c.MarkLabel(label);
-			};
-
-			IL.Terraria.NPC.UpdateNPC_UpdateGravity += il =>
+			IL_Liquid.Update += il =>
 			{
 				var c = new ILCursor(il);
-
-				if (!c.TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(out _), i => i.MatchLdcI4(4200)))
+				if (!c.TryGotoNext(i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Liquid), "y"), i => i.MatchCall(typeof(Main), "get_UnderworldLayer")))
 				{
+					Logger.Error("FAILED:");
 					return;
 				}
 
@@ -575,45 +546,22 @@ namespace SubworldLibrary
 
 				c.Emit(Ldsfld, current);
 				c.Emit(Callvirt, normalUpdates);
-				var label = c.DefineLabel();
-				c.Emit(Brfalse, label);
+				c.Emit(Brfalse, (ILLabel)c.Instrs[c.Index + 3].Operand);
 
 				c.MarkLabel(skip);
+			};
 
-				if (!c.TryGotoNext(MoveType.After, i => i.MatchLdloc(1), i => i.MatchMul(), i => i.MatchStsfld(typeof(NPC), "gravity")))
+			IL_Player.SavePlayer += il =>
+			{
+				ILCursor c, cc, ccc;
+				if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchCall(typeof(Player), "InternalSaveMap"))
+				|| !(cc = c.Clone()).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(typeof(Main), "ServerSideCharacter"))
+				|| !(ccc = cc.Clone()).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(FileUtilities), "ProtectedInvoke")))
 				{
+					Logger.Error("FAILED:");
 					return;
 				}
 
-				c.MarkLabel(label);
-			};
-
-			IL.Terraria.Liquid.Update += il =>
-			{
-				var c = new ILCursor(il);
-
-				if (c.TryGotoNext(i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Liquid), "y"), i => i.MatchCall(typeof(Main), "get_UnderworldLayer")))
-				{
-					c.Emit(Ldsfld, current);
-					var skip = c.DefineLabel();
-					c.Emit(Brfalse, skip);
-
-					c.Emit(Ldsfld, current);
-					c.Emit(Callvirt, normalUpdates);
-					c.Emit(Brfalse, (ILLabel)c.Instrs[c.Index + 3].Operand);
-
-					c.MarkLabel(skip);
-				}
-			};
-
-			IL.Terraria.Player.SavePlayer += il =>
-			{
-				var c = new ILCursor(il);
-
-				if (!c.TryGotoNext(i => i.MatchCall(typeof(Player), "InternalSaveMap")))
-				{
-					return;
-				}
 				c.Index -= 3;
 
 				c.Emit(Ldsfld, cache);
@@ -627,33 +575,23 @@ namespace SubworldLibrary
 
 				c.MarkLabel(skip);
 
-				if (!c.TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(typeof(Main), "ServerSideCharacter")))
-				{
-					return;
-				}
+				cc.MarkLabel(label);
 
-				c.MarkLabel(label);
+				cc.Emit(Ldsfld, cache);
+				skip = cc.DefineLabel();
+				cc.Emit(Brfalse, skip);
 
-				c.Emit(Ldsfld, cache);
-				skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
+				cc.Emit(Ldsfld, cache);
+				cc.Emit(Callvirt, typeof(Subworld).GetMethod("get_NoPlayerSaving"));
+				label = cc.DefineLabel();
+				cc.Emit(Brtrue, label);
 
-				c.Emit(Ldsfld, cache);
-				c.Emit(Callvirt, typeof(Subworld).GetMethod("get_NoPlayerSaving"));
-				label = c.DefineLabel();
-				c.Emit(Brtrue, label);
+				cc.MarkLabel(skip);
 
-				c.MarkLabel(skip);
-
-				if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(FileUtilities), "ProtectedInvoke")))
-				{
-					return;
-				}
-
-				c.MarkLabel(label);
+				ccc.MarkLabel(label);
 			};
 
-			IL.Terraria.IO.WorldFile.SaveWorld_bool_bool += il =>
+			IL_WorldFile.SaveWorld_bool_bool += il =>
 			{
 				var c = new ILCursor(il);
 
@@ -669,13 +607,13 @@ namespace SubworldLibrary
 			};
 		}
 
-		public static bool DenyRead(MessageBuffer buffer, int start, int length)
+		private static bool DenyRead(MessageBuffer buffer, int start, int length)
 		{
 			if (buffer.readBuffer[start + 2] == 250 && (ModNet.NetModCount < 256 ? buffer.readBuffer[start + 3] : BitConverter.ToUInt16(buffer.readBuffer, start + 3)) == ModContent.GetInstance<SubworldLibrary>().NetID)
 			{
 				return false;
 			}
-			if (!SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket.GetRemoteAddress(), out int id))
+			if (!SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket, out int id))
 			{
 				return false;
 			}
@@ -685,18 +623,14 @@ namespace SubworldLibrary
 			byte[] packet = new byte[length + 1];
 			packet[0] = (byte)buffer.whoAmI;
 			Buffer.BlockCopy(buffer.readBuffer, start, packet, 1, length);
-			SubworldSystem.SendToPipe(SubworldSystem.pipes[id], packet);
+			SubworldSystem.links[id].Send(packet);
 
 			return packet[3] != 2 && (packet[3] != 82 || BitConverter.ToUInt16(packet, 4) != NetManager.Instance.GetId<NetBestiaryModule>());
 		}
 
-		public static bool DenySend(ISocket socket, byte[] data, int start, int length, ref object state)
+		private static bool DenySend(ISocket socket, byte[] data, int start, int length, ref object state)
 		{
-			if (Thread.CurrentThread.Name == "Subserver Packet Thread")
-			{
-				return false;
-			}
-			return SubworldSystem.playerLocations.ContainsKey(socket.GetRemoteAddress());
+			return Thread.CurrentThread.Name != "Subserver Packets" && SubworldSystem.playerLocations.ContainsKey(socket);
 		}
 
 		private static void Sleep(Stopwatch stopwatch, double delta, ref double target)
@@ -716,70 +650,32 @@ namespace SubworldLibrary
 			Thread.Sleep((int)remaining);
 		}
 
+		public override object Call(params object[] args)
+		{
+			if (args.Length > 0)
+			{
+				return SubworldSystem.Enter((string)args[0]);
+			}
+			return false;
+		}
+
 		public override void HandlePacket(BinaryReader reader, int whoAmI)
 		{
-			switch (reader.ReadByte())
+			if (Main.netMode == 2)
 			{
-				case 0:
-					if (Main.netMode == 2)
-					{
-						ushort id = reader.ReadUInt16();
+				RemoteClient client = Netplay.Clients[whoAmI];
 
-						RemoteAddress address = Netplay.Clients[whoAmI].Socket.GetRemoteAddress();
-						if (address != null)
-						{
-							ModPacket packet = GetPacket();
-							packet.Write((byte)0);
-							packet.Write(id);
-							packet.Send(whoAmI);
+				if (SubworldSystem.current != null)
+				{
+					Main.player[whoAmI] = new Player();
 
-							Main.player[whoAmI].active = false;
-
-							SubworldSystem.StartSubserver(id);
-
-							SubworldSystem.playerLocations[address] = id;
-						}
-					}
-					else
-					{
-						Task.Factory.StartNew(SubworldSystem.ExitWorldCallBack, SubworldSystem.subworlds[reader.ReadUInt16()]);
-					}
-					break;
-				case 1:
-					if (Main.netMode == 2)
-					{
-						RemoteAddress address = Netplay.Clients[whoAmI].Socket.GetRemoteAddress();
-						if (address != null)
-						{
-							byte[] data = new byte[7] { (byte)whoAmI, 6, 0, 250, (byte)NetID, 2, (byte)whoAmI }; // client, (ushort) size, packet id, sublib net id
-							SubworldSystem.SendToPipe(SubworldSystem.pipes[SubworldSystem.playerLocations[address]], data);
-
-							SubworldSystem.playerLocations.Remove(address);
-							Netplay.Clients[whoAmI].State = 0;
-
-							ModPacket packet = GetPacket();
-							packet.Write((byte)1);
-							packet.Send(whoAmI);
-						}
-					}
-					else
-					{
-						Task.Factory.StartNew(SubworldSystem.ExitWorldCallBack, null);
-					}
-					break;
-				case 2:
-					byte index = reader.ReadByte();
-
-					Main.player[index] = new Player();
-
-					RemoteClient client = Netplay.Clients[index];
 					client.IsActive = false;
 					client.Socket = null;
 					client.State = 0;
 					client.ResetSections();
 					client.SpamClear();
 
-					NetMessage.SyncDisconnectedPlayer(index);
+					NetMessage.SyncDisconnectedPlayer(whoAmI);
 
 					bool connection = false;
 					for (int i = 0; i < 255; i++)
@@ -795,13 +691,90 @@ namespace SubworldLibrary
 						Netplay.Disconnect = true;
 						Netplay.HasClients = false;
 					}
-					break;
+
+					return;
+				}
+
+				ushort id = reader.ReadUInt16();
+				ModPacket packet;
+
+				bool inSubworld = SubworldSystem.playerLocations.TryGetValue(client.Socket, out int location);
+				if (inSubworld)
+				{
+					byte[] data = new byte[5] { (byte)whoAmI, 4, 0, 250, (byte)NetID }; // client, (ushort) size, packet id, sublib net id
+					SubworldSystem.links[location].Send(data);
+
+					if (id == ushort.MaxValue)
+					{
+						SubworldSystem.playerLocations.Remove(client.Socket);
+						client.State = 0;
+
+						packet = GetPacket();
+						packet.Write(id);
+						packet.Send(whoAmI);
+
+						return;
+					}
+				}
+				if (id == ushort.MaxValue)
+				{
+					return;
+				}
+
+				packet = GetPacket();
+				packet.Write(id);
+				packet.Send(whoAmI);
+
+				// this respects the vanilla call order
+
+				if (!inSubworld)
+				{
+					Main.player[whoAmI].active = false;
+					NetMessage.SendData(14, -1, whoAmI, null, whoAmI, 0);
+				}
+
+				ChatHelper.BroadcastChatMessage(NetworkText.FromKey("Mods.SubworldLibrary.Move", client.Name, SubworldSystem.subworlds[id].DisplayName), new Color(255, 240, 20), whoAmI);
+
+				if (!inSubworld)
+				{
+					Player.Hooks.PlayerDisconnect(whoAmI);
+				}
+
+				SubworldSystem.playerLocations[client.Socket] = id;
+				client.ResetSections();
+
+				SubworldSystem.StartSubserver(id);
+			}
+			else
+			{
+				ushort id = reader.ReadUInt16();
+				Task.Factory.StartNew(SubworldSystem.ExitWorldCallBack, id < ushort.MaxValue ? id : -1);
 			}
 		}
 	}
 
-	public abstract class Subworld : ModType
+	public interface ICopyWorldData : ILoadable
 	{
+		/// <summary>
+		/// Called on all content with this interface before <see cref="Subworld.OnEnter"/>, and after <see cref="Subworld.OnExit"/>.
+		/// <br/>This is where you copy data from the main world to a subworld, via <see cref="SubworldSystem.CopyWorldData"/>.
+		/// <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
+		/// </summary>
+		void CopyMainWorldData() { }
+
+		/// <summary>
+		/// Called on all content with this interface before a subworld generates, or after a subworld loads from file.
+		/// <br/>This is where you read data copied from the main world to a subworld, via <see cref="SubworldSystem.ReadCopiedWorldData"/>.
+		/// <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
+		/// </summary>
+		void ReadCopiedMainWorldData() { }
+	}
+
+	public abstract class Subworld : ModType, ICopyWorldData, ILocalizedModType
+	{
+		public string LocalizationCategory => "Subworlds";
+		public virtual LocalizedText DisplayName => this.GetLocalization(nameof(DisplayName), PrettyPrintName);
+
 		protected sealed override void Register()
 		{
 			ModTypeLookup<Subworld>.Register(this);
@@ -823,6 +796,13 @@ namespace SubworldLibrary
 		public abstract List<GenPass> Tasks { get; }
 		public virtual WorldGenConfiguration Config => null;
 		/// <summary>
+		/// The index of the subworld the player will be sent to when choosing to return. See <see cref="SubworldSystem.GetIndex{T}"/>.
+		/// <br/>Set to -1 to send the player back to the main world.
+		/// <br/>Set to <see cref="int.MinValue"/> to send the player to the main menu.
+		/// <br/>Default: -1
+		/// </summary>
+		public virtual int ReturnDestination => -1;
+		/// <summary>
 		/// Whether the subworld should save or not.
 		/// <br/>Default: false
 		/// </summary>
@@ -838,6 +818,12 @@ namespace SubworldLibrary
 		/// <br/>Default: false
 		/// </summary>
 		public virtual bool NormalUpdates => false;
+		/// <summary>
+		/// If <see cref="ChangeAudio"/> returns true, this completely disables vanilla audio updating.
+		/// <br/>Typically not required. Only enable this if you know what you are doing.
+		/// <br/>Default: false
+		/// </summary>
+		public virtual bool ManualAudioUpdates => false;
 		/// <summary>
 		/// Called when entering a subworld.
 		/// <br/>Before this is called, the return button and underworld's visibility are reset.
@@ -931,6 +917,17 @@ namespace SubworldLibrary
 			Main.spriteBatch.DrawString(FontAssets.DeathText.Value, Main.statusText, new Vector2(Main.screenWidth, Main.screenHeight) / 2 - FontAssets.DeathText.Value.MeasureString(Main.statusText) / 2, Color.White);
 		}
 		/// <summary>
+		/// Called before music is chosen, including in the loading menu.
+		/// <br/>Return true to disable vanilla behaviour, allowing for modification of variables such as <see cref="Main.newMusic"/>.
+		/// <br/>Default: false
+		/// </summary>
+		public virtual bool ChangeAudio() => false;
+		/// <summary>
+		/// Controls the gravity of an entity in the subworld.
+		/// <br/>Default: 1
+		/// </summary>
+		public virtual float GetGravity(Entity entity) => 1;
+		/// <summary>
 		/// Controls how a tile in the subworld is lit.
 		/// <br/>Return true to disable vanilla behaviour.
 		/// <br/>Default: false
@@ -940,7 +937,7 @@ namespace SubworldLibrary
 
 	internal class SubserverSocket : ISocket
 	{
-		private readonly int index;
+		private int index;
 
 		internal static NamedPipeClientStream pipe;
 
@@ -956,7 +953,7 @@ namespace SubworldLibrary
 			byte[] packet = new byte[size + 1];
 			packet[0] = (byte)index;
 			Buffer.BlockCopy(data, offset, packet, 1, size);
-			SubworldSystem.SendToPipe(pipe, packet);
+			pipe.Write(packet);
 		}
 
 		void ISocket.Close() { }
@@ -967,13 +964,73 @@ namespace SubworldLibrary
 
 		bool ISocket.IsConnected() => true;
 
-		bool ISocket.IsDataAvailable() => true;
+		bool ISocket.IsDataAvailable() => false;
 
 		void ISocket.SendQueuedPackets() { }
 
 		bool ISocket.StartListening(SocketConnectionAccepted callback) => true;
 
 		void ISocket.StopListening() { }
+	}
+
+	internal class SubserverLink
+	{
+		public readonly NamedPipeClientStream pipe;
+		private List<byte[]> queue;
+
+		public SubserverLink(string name)
+		{
+			pipe = new NamedPipeClientStream(".", name + ".IN", PipeDirection.Out);
+			queue = new List<byte[]>(16);
+		}
+
+		public bool QueueData(byte[] data)
+		{
+			if (queue == null)
+			{
+				return false;
+			}
+
+			queue.Add(data);
+			return true;
+		}
+
+		public void Send(byte[] data)
+		{
+			lock (this)
+			{
+				if (QueueData(data))
+				{
+					return;
+				}
+			}
+			pipe.Write(data);
+		}
+
+		public void ConnectAndProcessQueue()
+		{
+			pipe.Connect();
+			pipe.Write(queue[0]);
+			lock (this)
+			{
+				int size = 0;
+				for (int i = 1; i < queue.Count; i++)
+				{
+					size += queue[i].Length;
+				}
+
+				byte[] bytes = new byte[size];
+				size = 0;
+				for (int i = 1; i < queue.Count; i++)
+				{
+					Buffer.BlockCopy(queue[i], 0, bytes, size, queue[i].Length);
+					size += queue[i].Length;
+				}
+				pipe.Write(bytes);
+
+				queue = null;
+			}
+		}
 	}
 
 	public class SubworldSystem : ModSystem
@@ -986,19 +1043,8 @@ namespace SubworldLibrary
 
 		internal static TagCompound copiedData;
 
-		internal static Dictionary<RemoteAddress, int> playerLocations;
-		internal static Dictionary<int, NamedPipeClientStream> pipes;
-
-		/// <summary>
-		/// Hides the Return button.
-		/// <br/>Its value is reset before <see cref="Subworld.OnEnter"/> is called, and after <see cref="Subworld.OnExit"/> is called.
-		/// </summary>
-		public static bool noReturn;
-		/// <summary>
-		/// Hides the Underworld background.
-		/// <br/>Its value is reset before <see cref="Subworld.OnEnter"/> is called, and after <see cref="Subworld.OnExit"/> is called.
-		/// </summary>
-		public static bool hideUnderworld;
+		internal static Dictionary<ISocket, int> playerLocations;
+		internal static Dictionary<int, SubserverLink> links;
 
 		public override void OnModLoad()
 		{
@@ -1014,11 +1060,23 @@ namespace SubworldLibrary
 		}
 
 		/// <summary>
+		/// Hides the Return button.
+		/// <br/>Its value is reset before <see cref="Subworld.OnEnter"/> is called, and after <see cref="Subworld.OnExit"/> is called.
+		/// </summary>
+		public static bool noReturn;
+		/// <summary>
+		/// Hides the Underworld background.
+		/// <br/>Its value is reset before <see cref="Subworld.OnEnter"/> is called, and after <see cref="Subworld.OnExit"/> is called.
+		/// </summary>
+		public static bool hideUnderworld;
+
+		/// <summary>
 		/// The current subworld.
 		/// </summary>
 		public static Subworld Current => current;
 		/// <summary>
 		/// Returns true if the current subworld's ID matches the specified ID.
+		/// <code>SubworldSystem.IsActive("MyMod/MySubworld")</code>
 		/// </summary>
 		public static bool IsActive(string id) => current?.FullName == id;
 		/// <summary>
@@ -1039,7 +1097,8 @@ namespace SubworldLibrary
 		public static string CurrentPath => Path.Combine(Main.WorldPath, Path.GetFileNameWithoutExtension(main.Path), current.Mod.Name + "_" + current.Name + ".wld");
 
 		/// <summary>
-		/// Tries to enter a subworld with the specified ID.
+		/// Tries to enter the subworld with the specified ID.
+		/// <code>SubworldSystem.Enter("MyMod/MySubworld")</code>
 		/// </summary>
 		public static bool Enter(string id)
 		{
@@ -1083,17 +1142,42 @@ namespace SubworldLibrary
 		{
 			if (current != null && current == cache)
 			{
-				if (Main.netMode == 0)
+				BeginEntering(current.ReturnDestination);
+			}
+		}
+
+		/// <summary>
+		/// Tries to get the index of the subworld with the specified ID.
+		/// <br/> Typically used for <see cref="Subworld.ReturnDestination"/>.
+		/// <br/> Returns <see cref="int.MinValue"/> if the subworld couldn't be found.
+		/// <code>public override int ReturnDestination => SubworldSystem.GetIndex("MyMod/MySubworld");</code>
+		/// </summary>
+		public static int GetIndex(string id)
+		{
+			for (int i = 0; i < subworlds.Count; i++)
+			{
+				if (subworlds[i].FullName == id)
 				{
-					Task.Factory.StartNew(ExitWorldCallBack, null);
-				}
-				else if (Main.netMode == 1)
-				{
-					ModPacket packet = ModContent.GetInstance<SubworldLibrary>().GetPacket();
-					packet.Write((byte)1);
-					packet.Send();
+					return i;
 				}
 			}
+			return int.MinValue;
+		}
+
+		/// <summary>
+		/// Gets the index of the specified subworld.
+		/// <br/> Typically used for <see cref="Subworld.ReturnDestination"/>.
+		/// </summary>
+		public static int GetIndex<T>() where T : Subworld
+		{
+			for (int i = 0; i < subworlds.Count; i++)
+			{
+				if (subworlds[i].GetType() == typeof(T))
+				{
+					return i;
+				}
+			}
+			return int.MinValue;
 		}
 
 		/// <summary>
@@ -1142,10 +1226,10 @@ namespace SubworldLibrary
 				packet[i + 1] = (byte)(mod.NetID >> 8);
 			}
 
-			packet[i++] = (byte)mod.NetID;
+			packet[i] = (byte)mod.NetID;
 
 			Buffer.BlockCopy(data, 0, packet, extra, data.Length);
-			SendToPipe(SubserverSocket.pipe, packet);
+			SubserverSocket.pipe.Write(packet);
 		}
 
 		private static void GenerateSubworlds()
@@ -1175,21 +1259,52 @@ namespace SubworldLibrary
 			}
 		}
 
+		private static bool ChangeAudio()
+		{
+			if (current != null)
+			{
+				return current.ChangeAudio();
+			}
+			if (cache != null)
+			{
+				return cache.ChangeAudio();
+			}
+			return false;
+		}
+
+		private static bool ManualAudioUpdates()
+		{
+			if (current != null)
+			{
+				return current.ManualAudioUpdates;
+			}
+			if (cache != null)
+			{
+				return cache.ManualAudioUpdates;
+			}
+			return false;
+		}
+
 		private static void BeginEntering(int index)
 		{
+			if (index == int.MinValue && Main.netMode != 2)
+			{
+				Task.Factory.StartNew(ExitWorldCallBack, null);
+				return;
+			}
+
 			if (Main.netMode == 0)
 			{
-				if (current == null)
+				if (current == null && index >= 0)
 				{
 					main = Main.ActiveWorldFileData;
 				}
-				Task.Factory.StartNew(ExitWorldCallBack, subworlds[index]);
+				Task.Factory.StartNew(ExitWorldCallBack, index);
 			}
 			else if (Main.netMode == 1)
 			{
 				ModPacket packet = ModContent.GetInstance<SubworldLibrary>().GetPacket();
-				packet.Write((byte)0);
-				packet.Write((ushort)index);
+				packet.Write(index < 0 ? ushort.MaxValue : (ushort)index);
 				packet.Send();
 			}
 		}
@@ -1200,11 +1315,57 @@ namespace SubworldLibrary
 			copiedData["gameMode"] = Main.ActiveWorldFileData.GameMode;
 			copiedData["hardMode"] = Main.hardMode;
 
-			using (MemoryStream bestiary = new MemoryStream())
+			// it's called reflection because the code is ugly like you
+			using (MemoryStream stream = new MemoryStream())
 			{
-				using BinaryWriter writer = new BinaryWriter(bestiary);
-				Main.BestiaryTracker.Save(writer);
-				copiedData["bestiary"] = bestiary.GetBuffer();
+				using BinaryWriter writer = new BinaryWriter(stream);
+
+				FieldInfo field = typeof(NPCKillsTracker).GetField("_killCountsByNpcId", BindingFlags.NonPublic | BindingFlags.Instance);
+				Dictionary<string, int> kills = (Dictionary<string, int>)field.GetValue(Main.BestiaryTracker.Kills);
+
+				writer.Write(kills.Count);
+				foreach (KeyValuePair<string, int> item in kills)
+				{
+					writer.Write(item.Key);
+					writer.Write(item.Value);
+				}
+
+				field = typeof(NPCWasNearPlayerTracker).GetField("_wasNearPlayer", BindingFlags.NonPublic | BindingFlags.Instance);
+				HashSet<string> sights = (HashSet<string>)field.GetValue(Main.BestiaryTracker.Sights);
+
+				writer.Write(sights.Count);
+				foreach (string item in sights)
+				{
+					writer.Write(item);
+				}
+
+				field = typeof(NPCWasChatWithTracker).GetField("_chattedWithPlayer", BindingFlags.NonPublic | BindingFlags.Instance);
+				HashSet<string> chats = (HashSet<string>)field.GetValue(Main.BestiaryTracker.Chats);
+
+				writer.Write(chats.Count);
+				foreach (string item in chats)
+				{
+					writer.Write(item);
+				}
+
+				copiedData["bestiary"] = stream.GetBuffer();
+			}
+			using (MemoryStream stream = new MemoryStream())
+			{
+				using BinaryWriter writer = new BinaryWriter(stream);
+
+				FieldInfo field = typeof(CreativePowerManager).GetField("_powersById", BindingFlags.NonPublic | BindingFlags.Instance);
+				foreach (KeyValuePair<ushort, ICreativePower> item in (Dictionary<ushort, ICreativePower>)field.GetValue(CreativePowerManager.Instance))
+				{
+					if (item.Value is IPersistentPerWorldContent power)
+					{
+						writer.Write((ushort)(item.Key + 1));
+						power.Save(writer);
+					}
+				}
+				writer.Write((ushort)0);
+
+				copiedData["powers"] = stream.GetBuffer();
 			}
 
 			copiedData[nameof(Main.drunkWorld)] = Main.drunkWorld;
@@ -1212,12 +1373,15 @@ namespace SubworldLibrary
 			copiedData[nameof(Main.tenthAnniversaryWorld)] = Main.tenthAnniversaryWorld;
 			copiedData[nameof(Main.dontStarveWorld)] = Main.dontStarveWorld;
 			copiedData[nameof(Main.notTheBeesWorld)] = Main.notTheBeesWorld;
+			copiedData[nameof(Main.remixWorld)] = Main.remixWorld;
+			copiedData[nameof(Main.noTrapsWorld)] = Main.noTrapsWorld;
+			copiedData[nameof(Main.zenithWorld)] = Main.zenithWorld;
 
 			CopyDowned();
 
-			foreach (Subworld subworld in subworlds)
+			foreach (ICopyWorldData data in ModContent.GetContent<ICopyWorldData>())
 			{
-				subworld.CopyMainWorldData();
+				data.CopyMainWorldData();
 			}
 		}
 
@@ -1227,10 +1391,50 @@ namespace SubworldLibrary
 			Main.GameMode = copiedData.Get<int>("gameMode");
 			Main.hardMode = copiedData.Get<bool>("hardMode");
 
-			using (MemoryStream bestiary = new MemoryStream(copiedData.Get<byte[]>("bestiary")))
+			// i'm sorry that was mean
+			using (MemoryStream stream = new MemoryStream(copiedData.Get<byte[]>("bestiary")))
 			{
-				using BinaryReader reader = new BinaryReader(bestiary);
-				Main.BestiaryTracker.Load(reader, 248);
+				using BinaryReader reader = new BinaryReader(stream);
+
+				FieldInfo field = typeof(NPCKillsTracker).GetField("_killCountsByNpcId", BindingFlags.NonPublic | BindingFlags.Instance);
+				Dictionary<string, int> kills = (Dictionary<string, int>)field.GetValue(Main.BestiaryTracker.Kills);
+
+				int count = reader.ReadInt32();
+				for (int i = 0; i < count; i++)
+				{
+					kills[reader.ReadString()] = reader.ReadInt32();
+				}
+
+				field = typeof(NPCWasNearPlayerTracker).GetField("_wasNearPlayer", BindingFlags.NonPublic | BindingFlags.Instance);
+				HashSet<string> sights = (HashSet<string>)field.GetValue(Main.BestiaryTracker.Sights);
+
+				count = reader.ReadInt32();
+				for (int i = 0; i < count; i++)
+				{
+					sights.Add(reader.ReadString());
+				}
+
+				field = typeof(NPCWasChatWithTracker).GetField("_chattedWithPlayer", BindingFlags.NonPublic | BindingFlags.Instance);
+				HashSet<string> chats = (HashSet<string>)field.GetValue(Main.BestiaryTracker.Chats);
+
+				count = reader.ReadInt32();
+				for (int i = 0; i < count; i++)
+				{
+					chats.Add(reader.ReadString());
+				}
+			}
+			using (MemoryStream stream = new MemoryStream(copiedData.Get<byte[]>("powers")))
+			{
+				using BinaryReader reader = new BinaryReader(stream);
+
+				FieldInfo field = typeof(CreativePowerManager).GetField("_powersById", BindingFlags.NonPublic | BindingFlags.Instance);
+				Dictionary<ushort, ICreativePower> powers = (Dictionary<ushort, ICreativePower>)field.GetValue(CreativePowerManager.Instance);
+
+				ushort id;
+				while ((id = reader.ReadUInt16()) > 0)
+				{
+					((IPersistentPerWorldContent)powers[(ushort)(id - 1)]).Load(reader, 0);
+				}
 			}
 
 			Main.drunkWorld = copiedData.Get<bool>(nameof(Main.drunkWorld));
@@ -1238,12 +1442,15 @@ namespace SubworldLibrary
 			Main.tenthAnniversaryWorld = copiedData.Get<bool>(nameof(Main.tenthAnniversaryWorld));
 			Main.dontStarveWorld = copiedData.Get<bool>(nameof(Main.dontStarveWorld));
 			Main.notTheBeesWorld = copiedData.Get<bool>(nameof(Main.notTheBeesWorld));
+			Main.remixWorld = copiedData.Get<bool>(nameof(Main.remixWorld));
+			Main.noTrapsWorld = copiedData.Get<bool>(nameof(Main.noTrapsWorld));
+			Main.zenithWorld = copiedData.Get<bool>(nameof(Main.zenithWorld));
 
 			ReadCopiedDowned();
 
-			foreach (Subworld subworld in subworlds)
+			foreach (ICopyWorldData data in ModContent.GetContent<ICopyWorldData>())
 			{
-				subworld.ReadCopiedMainWorldData();
+				data.ReadCopiedMainWorldData();
 			}
 		}
 
@@ -1349,21 +1556,9 @@ namespace SubworldLibrary
 			DD2Event.DownedInvasionT3 = copiedData.Get<bool>(nameof(DD2Event.DownedInvasionT3));
 		}
 
-		internal static void SendToPipe(NamedPipeClientStream pipe, byte[] data)
-		{
-			Task.Run(() =>
-			{
-				if (!pipe.IsConnected)
-				{
-					pipe.Connect(5000);
-				}
-				pipe.Write(data);
-			});
-		}
-
 		public static void StartSubserver(int id)
 		{
-			if (pipes.ContainsKey(id))
+			if (links.ContainsKey(id))
 			{
 				return;
 			}
@@ -1374,27 +1569,30 @@ namespace SubworldLibrary
 			p.StartInfo.UseShellExecute = true;
 			p.Start();
 
-			pipes[id] = new NamedPipeClientStream(".", subworlds[id].FullName + "/IN", PipeDirection.Out);
 			new Thread(MainServerCallBack)
 			{
-				Name = "Subserver Packet Thread",
+				Name = "Subserver Packets",
 				IsBackground = true
 			}.Start(id);
+
+			links[id] = new SubserverLink(subworlds[id].FullName);
 
 			copiedData = new TagCompound();
 			CopyMainWorldData();
 
-			using MemoryStream stream = new MemoryStream();
-			TagIO.ToStream(copiedData, stream);
-			pipes[id].Connect(15000);
-			pipes[id].Write(stream.ToArray());
+			using (MemoryStream stream = new MemoryStream())
+			{
+				TagIO.ToStream(copiedData, stream);
+				links[id].QueueData(stream.ToArray());
+				copiedData = null;
+			}
 
-			copiedData = null;
+			Task.Run(links[id].ConnectAndProcessQueue);
 		}
 
 		private static void MainServerCallBack(object id)
 		{
-			NamedPipeServerStream pipe = new NamedPipeServerStream(subworlds[(int)id].FullName + "/OUT", PipeDirection.In, -1);
+			NamedPipeServerStream pipe = new NamedPipeServerStream(subworlds[(int)id].FullName + ".OUT", PipeDirection.In);
 			try
 			{
 				pipe.WaitForConnection();
@@ -1440,8 +1638,8 @@ namespace SubworldLibrary
 			finally
 			{
 				pipe.Close();
-				pipes[(int)id].Close();
-				pipes.Remove((int)id);
+				links[(int)id].pipe.Close();
+				links.Remove((int)id);
 			}
 		}
 
@@ -1457,7 +1655,7 @@ namespace SubworldLibrary
 						main = Main.ActiveWorldFileData;
 						current = subworlds[i];
 
-						NamedPipeServerStream pipe = new NamedPipeServerStream(current.FullName + "/IN", PipeDirection.In, -1);
+						NamedPipeServerStream pipe = new NamedPipeServerStream(current.FullName + ".IN", PipeDirection.In);
 						pipe.WaitForConnection();
 
 						copiedData = TagIO.FromStream(pipe);
@@ -1471,11 +1669,13 @@ namespace SubworldLibrary
 							Netplay.Clients[j].ReadBuffer = null; // not used by subservers, saves 262kb total
 						}
 
-						SubserverSocket.pipe = new NamedPipeClientStream(".", current.FullName + "/OUT", PipeDirection.Out);
 						new Thread(SubserverCallBack)
 						{
 							IsBackground = true
 						}.Start(pipe);
+
+						SubserverSocket.pipe = new NamedPipeClientStream(".", current.FullName + ".OUT", PipeDirection.Out);
+						SubserverSocket.pipe.Connect();
 
 						return true;
 					}
@@ -1485,8 +1685,8 @@ namespace SubworldLibrary
 				return true;
 			}
 
-			playerLocations = new Dictionary<RemoteAddress, int>();
-			pipes = new Dictionary<int, NamedPipeClientStream>();
+			playerLocations = new Dictionary<ISocket, int>();
+			links = new Dictionary<int, SubserverLink>();
 
 			return false;
 		}
@@ -1539,37 +1739,43 @@ namespace SubworldLibrary
 			}
 		}
 
-		internal static void ExitWorldCallBack(object subworldObject)
+		internal static void ExitWorldCallBack(object index)
 		{
 			// presumably avoids a race condition?
 			int netMode = Main.netMode;
 
-			if (netMode == 0)
+			if (index != null)
 			{
-				WorldFile.CacheSaveTime();
+				if (netMode == 0)
+				{
+					WorldFile.CacheSaveTime();
 
-				if (copiedData == null)
+					if (copiedData == null)
+					{
+						copiedData = new TagCompound();
+					}
+					if (cache != null)
+					{
+						cache.CopySubworldData();
+						cache.OnExit();
+					}
+					if ((int)index >= 0)
+					{
+						CopyMainWorldData();
+					}
+				}
+				else
 				{
-					copiedData = new TagCompound();
+					Netplay.Connection.State = 1;
+					cache?.OnExit();
 				}
 
-				if (cache != null)
-				{
-					cache.CopySubworldData();
-					cache.OnExit();
-				}
-				if (subworldObject != null)
-				{
-					CopyMainWorldData();
-				}
+				current = (int)index < 0 ? null : subworlds[(int)index];
 			}
 			else
 			{
-				Netplay.Connection.State = 1;
-				cache?.OnExit();
+				current = null;
 			}
-
-			current = (Subworld)subworldObject;
 
 			Main.invasionProgress = -1;
 			Main.invasionProgressDisplayLeft = 0;
@@ -1603,12 +1809,24 @@ namespace SubworldLibrary
 			{
 				WorldFile.SaveWorld();
 			}
+			else if (index == null)
+			{
+				Netplay.Disconnect = true;
+				Main.netMode = 0;
+			}
 			SystemLoader.OnWorldUnload();
 
-			Main.fastForwardTime = false;
+			Main.fastForwardTimeToDawn = false;
+			Main.fastForwardTimeToDusk = false;
 			Main.UpdateTimeRate();
-			WorldGen.noMapUpdate = true;
 
+			if (index == null)
+			{
+				Main.menuMode = 0;
+				return;
+			}
+
+			WorldGen.noMapUpdate = true;
 			if (cache != null && cache.NoPlayerSaving)
 			{
 				PlayerFileData playerData = Player.GetFileData(Main.ActivePlayerFileData.Path, Main.ActivePlayerFileData.IsCloudSave);
@@ -1632,17 +1850,18 @@ namespace SubworldLibrary
 		private static void LoadWorld()
 		{
 			bool isSubworld = current != null;
+			bool cloud = main.IsCloudSave;
+			string path = isSubworld ? CurrentPath : main.Path;
+
+			Main.rand = new UnifiedRandom((int)DateTime.Now.Ticks);
+
+			cache?.OnUnload();
+
+			Main.ToggleGameplayUpdates(false);
 
 			WorldGen.gen = true;
 			WorldGen.loadFailed = false;
 			WorldGen.loadSuccess = false;
-
-			Main.rand = new UnifiedRandom((int)DateTime.Now.Ticks);
-
-			bool cloud = main.IsCloudSave;
-			string path = isSubworld ? CurrentPath : main.Path;
-
-			cache?.OnUnload();
 
 			if (!isSubworld || current.ShouldSave)
 			{
@@ -1687,25 +1906,28 @@ namespace SubworldLibrary
 				{
 					Main.Map.Load();
 				}
-				Main.sectionManager.SetAllFramesLoaded();
+				Main.sectionManager.SetAllSectionsLoaded();
 				while (Main.mapEnabled && Main.loadMapLock)
 				{
 					Main.statusText = Lang.gen[68].Value + " " + (int)((float)Main.loadMapLastX / Main.maxTilesX * 100 + 1) + "%";
 					Thread.Sleep(0);
 				}
 
-				Player player = Main.LocalPlayer;
-				if (Main.anglerWhoFinishedToday.Contains(player.name))
+				if (Main.anglerWhoFinishedToday.Contains(Main.LocalPlayer.name))
 				{
 					Main.anglerQuestFinished = true;
 				}
-				player.Spawn(PlayerSpawnContext.SpawningIntoWorld);
-				Main.ActivePlayerFileData.StartPlayTimer();
-				Player.Hooks.EnterWorld(Main.myPlayer);
-				WorldFile.SetOngoingToTemps();
-				Main.resetClouds = true;
-				Main.gameMenu = false;
+
+				Main.QueueMainThreadAction(SpawnPlayer);
 			}
+		}
+
+		private static void SpawnPlayer()
+		{
+			Main.LocalPlayer.Spawn(PlayerSpawnContext.SpawningIntoWorld);
+			WorldFile.SetOngoingToTemps();
+			Main.resetClouds = true;
+			Main.gameMenu = false;
 		}
 
 		private static void OnEnterWorld(Player player)
@@ -1730,7 +1952,7 @@ namespace SubworldLibrary
 
 		private static void LoadSubworld(string path, bool cloud)
 		{
-			Main.worldName = Language.GetTextValue("Mods." + current.Mod.Name + ".SubworldName." + current.Name);
+			Main.worldName = current.DisplayName.Value;
 			if (Main.netMode == 2)
 			{
 				Console.Title = Main.worldName;
@@ -1755,13 +1977,13 @@ namespace SubworldLibrary
 			WorldGen.clearWorld();
 			Main.worldSurface = Main.maxTilesY * 0.3;
 			Main.rockLayer = Main.maxTilesY * 0.5;
-			WorldGen.waterLine = Main.maxTilesY;
+			GenVars.waterLine = Main.maxTilesY;
 			Main.weatherCounter = 18000;
 			Cloud.resetClouds();
 
 			ReadCopiedMainWorldData();
 
-			float weight = 0;
+			double weight = 0;
 			for (int i = 0; i < current.Tasks.Count; i++)
 			{
 				weight += current.Tasks[i].Weight;
@@ -1899,7 +2121,7 @@ namespace SubworldLibrary
 
 		internal static void PostLoadWorldFile()
 		{
-			WorldGen.waterLine = Main.maxTilesY;
+			GenVars.waterLine = Main.maxTilesY;
 			Liquid.QuickWater(2);
 			WorldGen.WaterCheck();
 			Liquid.quickSettle = true;
