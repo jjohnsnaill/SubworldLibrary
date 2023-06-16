@@ -1,5 +1,3 @@
-Mods: {
-	SubworldLibrary: {
-		Return: Retour
-	}
+Mods.SubworldLibrary: {
+	Return: Retour
 }

@@ -428,18 +428,6 @@ namespace SubworldLibrary
 				};
 			}
 
-			IL_WorldGen.do_worldGenCallBack += il =>
-			{
-				var c = new ILCursor(il);
-				if (!c.TryGotoNext(MoveType.After, i => i.MatchCall(typeof(WorldFile), "SaveWorld")))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("GenerateSubworlds", BindingFlags.NonPublic | BindingFlags.Static));
-			};
-
 			IL_Main.EraseWorld += il =>
 			{
 				var c = new ILCursor(il);
@@ -1230,23 +1218,6 @@ namespace SubworldLibrary
 
 			Buffer.BlockCopy(data, 0, packet, extra, data.Length);
 			SubserverSocket.pipe.Write(packet);
-		}
-
-		private static void GenerateSubworlds()
-		{
-			main = Main.ActiveWorldFileData;
-			bool cloud = main.IsCloudSave;
-
-			foreach (Subworld subworld in subworlds)
-			{
-				if (subworld.ShouldSave)
-				{
-					current = subworld;
-					LoadSubworld(CurrentPath, cloud);
-					WorldFile.SaveWorld(cloud);
-					Main.ActiveWorldFileData = main;
-				}
-			}
 		}
 
 		private static void EraseSubworlds(int index)

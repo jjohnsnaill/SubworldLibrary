@@ -1,5 +1,3 @@
-Mods: {
-	SubworldLibrary: {
-		Return: 返回
-	}
+Mods.SubworldLibrary: {
+	Return: 返回
 }
