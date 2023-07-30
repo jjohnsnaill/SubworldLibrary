@@ -1,6 +1,6 @@
 displayName=Subworld Library
 author=John Snail
-version=2.2.0.2
+version=2.2.1
 homepage=https://forums.terraria.org/index.php?threads/86283
 hideCode=true
 hideResources=true

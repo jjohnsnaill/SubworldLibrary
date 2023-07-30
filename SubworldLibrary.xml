@@ -132,7 +132,7 @@
             <summary>
             Corrects zoom and clears the screen, then calls DrawMenu and draws the cursor.
             <code>
-            PlayerInput.SetZoom_Unscaled();
+            PlayerInput.SetZoom_UI();
             Main.instance.GraphicsDevice.Clear(Color.Black);
             Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, DepthStencilState.None, Main.Rasterizer, null, Main.UIScaleMatrix);
             DrawMenu(gameTime);
@@ -195,6 +195,11 @@
             Returns true if the specified subworld is active.
             </summary>
         </member>
+        <member name="M:SubworldLibrary.SubworldSystem.AnyActive">
+            <summary>
+            Returns true if not in the main world.
+            </summary>
+        </member>
         <member name="M:SubworldLibrary.SubworldSystem.AnyActive(Terraria.ModLoader.Mod)">
             <summary>
             Returns true if the current subworld is from the specified mod.
@@ -226,6 +231,21 @@
             Exits the current subworld.
             </summary>
         </member>
+        <member name="M:SubworldLibrary.SubworldSystem.MovePlayerToSubworld(System.String,System.Int32)">
+            <summary>
+            Tries to send the specified player to the subworld with the specified ID.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.MovePlayerToSubworld``1(System.Int32)">
+            <summary>
+            Sends the specified player to the specified subworld.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.StartSubserver(System.Int32)">
+            <summary>
+            Starts a subserver for the subworld with the specified ID, if one is not running already.
+            </summary>
+        </member>
         <member name="M:SubworldLibrary.SubworldSystem.GetIndex(System.String)">
             <summary>
             Tries to get the index of the subworld with the specified ID.
@@ -238,6 +258,27 @@
             <summary>
             Gets the index of the specified subworld.
             <br/> Typically used for <see cref="P:SubworldLibrary.Subworld.ReturnDestination"/>.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.SendToSubserver(System.Int32,Terraria.ModLoader.Mod,System.Byte[])">
+            <summary>
+            Sends a packet from the specified mod directly to a subserver.
+            <br/> Use <see cref="M:SubworldLibrary.SubworldSystem.GetIndex(System.String)"/> to get the subserver's ID.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.SendToAllSubservers(Terraria.ModLoader.Mod,System.Byte[])">
+            <summary>
+            Sends a packet from the specified mod directly to all subservers.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.SendToAllSubserversFromMod(Terraria.ModLoader.Mod,System.Byte[])">
+            <summary>
+            Sends a packet from the specified mod directly to all subservers added by that mod.
+            </summary>
+        </member>
+        <member name="M:SubworldLibrary.SubworldSystem.SendToMainServer(Terraria.ModLoader.Mod,System.Byte[])">
+            <summary>
+            Sends a packet from the specified mod directly to the main server.
             </summary>
         </member>
         <member name="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)">
@@ -253,11 +294,6 @@
             Can only be called in <see cref="M:SubworldLibrary.Subworld.ReadCopiedMainWorldData"/> or <see cref="M:SubworldLibrary.Subworld.ReadCopiedSubworldData"/>!
             <br/>Reads data copied from another world stored under the specified key.
             <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
-            </summary>
-        </member>
-        <member name="M:SubworldLibrary.SubworldSystem.SendToMainServer(Terraria.ModLoader.Mod,System.Byte[])">
-            <summary>
-            Sends a packet from the specified mod directly to the main server.
             </summary>
         </member>
     </members>
