@@ -2045,6 +2045,7 @@ namespace SubworldLibrary
 
 			if (index == null)
 			{
+   				cache = null;
 				Main.menuMode = 0;
 				return;
 			}
