@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using Terraria;
 using Terraria.GameContent.Generation;
 using Terraria.ID;
+using Terraria.IO;
 using Terraria.ModLoader;
-using Terraria.World.Generation;
+using Terraria.WorldBuilding;
 
 namespace ModCallExample
 {
 	//This class showcases how to organize your SubworldLibrary reference
-	public static class SubworldManager
+	public class SubworldManager : ModSystem
 	{
 		//How we identify our world
 		public static string mySubworldID = string.Empty; //An empty string will not cause any problems in Enter, IsActive etc. calls
@@ -44,11 +45,9 @@ namespace ModCallExample
 		}
 		#endregion
 
-		//Call this in ModCallExampleMod.PostSetupContent()
-		public static void Load()
+		public override void PostSetupContent()
 		{
-			subworldLibrary = ModLoader.GetMod("SubworldLibrary");
-			if (subworldLibrary != null)
+			if (ModLoader.TryGetMod("SubworldLibrary", out Mod subworldLibrary))
 			{
 				object result = subworldLibrary.Call(
 					"Register",
@@ -70,8 +69,7 @@ namespace ModCallExample
 			}
 		}
 
-		//Call this in ModCallExampleMod.Unload()
-		public static void Unload()
+		public override void Unload()
 		{
 			subworldLibrary = null;
 			mySubworldID = string.Empty;
@@ -91,7 +89,7 @@ namespace ModCallExample
 			{
 				//First pass
 				new PassLegacy("Adjusting",
-				delegate (GenerationProgress progress)
+				delegate (GenerationProgress progress, GameConfiguration configuration)
 				{
 					progress.Message = "Adjusting world levels"; //Sets the text above the worldgen progress bar
 					Main.worldSurface = Main.maxTilesY - 42; //Hides the underground layer just out of bounds
@@ -100,7 +98,7 @@ namespace ModCallExample
 				1f),
 				//Second pass
 				new PassLegacy("GeneratingBorders",
-				delegate (GenerationProgress progress)
+				delegate (GenerationProgress progress, GameConfiguration configuration)
 				{
 					progress.Message = "Generating subworld borders";
 

@@ -8,7 +8,7 @@ namespace ModCallExample
 		public override void EditSpawnPool(IDictionary<int, float> pool, NPCSpawnInfo spawnInfo)
 		{
 			//If any subworld from our mod is loaded, disable spawns
-			if (SubworldManager.AnyActive(mod) ?? false)
+			if (SubworldManager.AnyActive(Mod) ?? false)
 			{
 				pool.Clear();
 			}

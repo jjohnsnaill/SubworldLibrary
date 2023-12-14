@@ -1,8 +1,8 @@
 displayName = Mod.Call ExampleMod for SubworldLibrary
 author = direwolf420
-version = 0.1
+version = 0.2
 hideCode = false
 hideResources = false
 buildIgnore = *.csproj, *.user, *.md, obj\*, bin\*, .vs\*
-weakReferences = SubworldLibrary
+loadAfter = SubworldLibrary
 homepage = https://github.com/jjohnsnaill/SubworldLibrary/wiki

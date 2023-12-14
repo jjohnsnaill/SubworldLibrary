@@ -1,36 +1,30 @@
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
-using Terraria.Localization;
 using Terraria.ModLoader;
 
 namespace ModCallExample
 {
 	public class SubworldEnteringItem : ModItem
 	{
-		public override string Texture => "Terraria/Item_" + ItemID.Extractinator;
-
-		public override void SetStaticDefaults()
-		{
-			Tooltip.SetDefault("Use to enter a subworld. Only works with 'SubworldLibrary' Mod enabled");
-		}
+		public override string Texture => "Terraria/Images/Item_" + ItemID.Extractinator;
 
 		public override void SetDefaults()
 		{
-			item.maxStack = 1;
-			item.width = 34;
-			item.height = 38;
-			item.rare = 12;
-			item.useStyle = 4;
-			item.useTime = 30;
-			item.useAnimation = 30;
-			item.UseSound = SoundID.Item1;
+			Item.maxStack = 1;
+			Item.width = 34;
+			Item.height = 38;
+			Item.rare = 12;
+			Item.useStyle = 4;
+			Item.useTime = 30;
+			Item.useAnimation = 30;
+			Item.UseSound = SoundID.Item1;
 		}
 
-		public override bool UseItem(Player player)
+		public override bool? UseItem(Player player)
 		{
-			//Enter should be called on exactly one side, which here is either the singleplayer player, or the server
-			if (Main.netMode != NetmodeID.MultiplayerClient)
+			//Enter should be called on exactly one side, which here is the player
+			if (Main.myPlayer == player.whoAmI)
 			{
 				bool result = SubworldManager.Enter(SubworldManager.mySubworldID) ?? false;
 
@@ -47,14 +41,7 @@ namespace ModCallExample
 						message = $"Unable to enter {SubworldManager.mySubworldID}!";
 					}
 
-					if (Main.netMode == NetmodeID.Server)
-					{
-						NetMessage.BroadcastChatMessage(NetworkText.FromLiteral(message), Color.Orange);
-					}
-					else
-					{
-						Main.NewText(message, Color.Orange);
-					}
+					Main.NewText(message, Color.Orange);
 				}
 
 				return result;
@@ -64,10 +51,9 @@ namespace ModCallExample
 
 		public override void AddRecipes()
 		{
-			ModRecipe recipe = new ModRecipe(mod);
+			Recipe recipe = CreateRecipe();
 			recipe.AddIngredient(ItemID.DirtBlock, 1);
-			recipe.SetResult(this);
-			recipe.AddRecipe();
+			recipe.Register();
 		}
 	}
 }
