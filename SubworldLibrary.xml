@@ -79,6 +79,12 @@
             <br/>After this is called, the return button and underworld's visibility are reset.
             </summary>
         </member>
+        <member name="M:SubworldLibrary.Subworld.Update">
+            <summary>
+            Called after <see cref="M:Terraria.ModLoader.ModSystem.PreUpdateWorld"/>, and before <see cref="M:Terraria.ModLoader.ModSystem.PostUpdateWorld"/>.
+            <br/>This can be used to make things happen in the subworld.
+            </summary>
+        </member>
         <member name="M:SubworldLibrary.Subworld.CopyMainWorldData">
             <summary>
             Called on all subworlds before <see cref="M:SubworldLibrary.Subworld.OnEnter"/>, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
