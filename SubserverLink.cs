@@ -9,6 +9,7 @@ namespace SubworldLibrary
 		private NamedPipeServerStream pipeOut;
 		private NamedPipeServerStream pipeIn;
 		private byte[] queue;
+		private bool _connected;
 
 		public SubserverLink(string name, byte[] queue)
 		{
@@ -17,17 +18,19 @@ namespace SubworldLibrary
 			this.queue = queue;
 		}
 
-		public bool Connected => queue == null;
+		public bool Connected => _connected;
 
 		public void Close()
 		{
+			_connected = false;
+
 			pipeOut.Close();
 			pipeIn.Close();
 		}
 
 		public void Send(byte[] data)
 		{
-			if (Connected)
+			if (_connected)
 			{
 				pipeIn.Write(data);
 			}
@@ -38,7 +41,6 @@ namespace SubworldLibrary
 			pipeIn.WaitForConnection();
 
 			pipeIn.Write(queue);
-
 			queue = null;
 		}
 
@@ -46,7 +48,7 @@ namespace SubworldLibrary
 		{
 			try
 			{
-				ConnectAndRead();
+				ReadLoop((int)id);
 			}
 			finally
 			{
@@ -54,9 +56,12 @@ namespace SubworldLibrary
 			}
 		}
 
-		private void ConnectAndRead()
+		private void ReadLoop(int id)
 		{
 			pipeOut.WaitForConnection();
+
+			// world data has been read, packets can now be sent
+			_connected = true;
 
 			// prompt clients to connect to the subserver
 			for (int i = 0; i < 256; i++)
@@ -96,7 +101,11 @@ namespace SubworldLibrary
 					continue;
 				}
 
-				Netplay.Clients[packetInfo[0]].Socket.AsyncSend(data, 0, length, (state) => { });
+				// prevents a race condition where a subserver tries to send packets to a client who just left
+				if (SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[packetInfo[0]].Socket, out int location) && location == id)
+				{
+					Netplay.Clients[packetInfo[0]].Socket.AsyncSend(data, 0, length, (state) => { });
+				}
 			}
 		}
 	}

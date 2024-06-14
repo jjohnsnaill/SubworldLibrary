@@ -332,6 +332,11 @@ namespace SubworldLibrary
 
 		private static void SyncDisconnect(int player)
 		{
+			if (playerLocations.ContainsKey(Netplay.Clients[player].Socket))
+			{
+				playerLocations.Remove(Netplay.Clients[player].Socket);
+			}
+
 			byte[] data = GetDisconnectPacket(player, ModContent.GetInstance<SubworldLibrary>().NetID);
 			foreach (SubserverLink link in links.Values)
 			{
@@ -421,12 +426,12 @@ namespace SubworldLibrary
 		/// </summary>
 		public static void StopSubserver(int id)
 		{
-			if (!links.ContainsKey(id))
+			if (!links.TryGetValue(id, out SubserverLink link))
 			{
 				return;
 			}
 
-			links[id].Close();
+			link.Close();
 			links.Remove(id);
 
 			foreach (KeyValuePair<ISocket, int> player in playerLocations)
@@ -890,7 +895,7 @@ namespace SubworldLibrary
 					long streamPos = reader.BaseStream.Position;
 					reader.BaseStream.Position = pos + 3;
 
-					ModContent.GetInstance<SubworldLibrary>().Logger.Info(Convert.ToHexString(NetMessage.buffer[256].readBuffer, pos, len));
+					//ModContent.GetInstance<SubworldLibrary>().Logger.Info(Convert.ToHexString(NetMessage.buffer[256].readBuffer, pos, len));
 
 					ModNet.GetMod(ModNet.NetModCount < 256 ? reader.ReadByte() : reader.ReadUInt16()).HandlePacket(reader, 256);
 
