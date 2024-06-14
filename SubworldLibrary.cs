@@ -38,9 +38,207 @@ namespace SubworldLibrary
 		{
 			FieldInfo current = typeof(SubworldSystem).GetField("current", BindingFlags.NonPublic | BindingFlags.Static);
 			FieldInfo cache = typeof(SubworldSystem).GetField("cache", BindingFlags.NonPublic | BindingFlags.Static);
-			FieldInfo hideUnderworld = typeof(SubworldSystem).GetField("hideUnderworld");
 			MethodInfo normalUpdates = typeof(Subworld).GetMethod("get_NormalUpdates");
 			MethodInfo shouldSave = typeof(Subworld).GetMethod("get_ShouldSave");
+
+			IL_WorldGen.clearWorld += il =>
+			{
+				var c = new ILCursor(il);
+
+				c.Emit(Ldsfld, typeof(WorldGen).GetField("lastMaxTilesX", BindingFlags.NonPublic | BindingFlags.Static));
+				c.Emit(Ldsfld, typeof(WorldGen).GetField("lastMaxTilesY", BindingFlags.NonPublic | BindingFlags.Static));
+				c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("ResizeSubworld", BindingFlags.NonPublic | BindingFlags.Static));
+			};
+
+			IL_Main.DoUpdateInWorld += il =>
+			{
+				ILCursor c, cc;
+				if (!(c = new ILCursor(il)).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(SystemLoader), "PreUpdateTime"))
+				|| !(cc = c.Clone()).TryGotoNext(i => i.MatchCall(typeof(SystemLoader), "PostUpdateTime")))
+				{
+					Logger.Error("FAILED:");
+					return;
+				}
+
+				c.Emit(Ldsfld, current);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Callvirt, normalUpdates);
+				var label = c.DefineLabel();
+				c.Emit(Brfalse, label);
+
+				c.MarkLabel(skip);
+
+				cc.MarkLabel(label);
+			};
+
+			IL_WorldGen.UpdateWorld += il =>
+			{
+				var c = new ILCursor(il);
+				if (!c.TryGotoNext(i => i.MatchCall(typeof(WorldGen), "UpdateWorld_Inner")))
+				{
+					Logger.Error("FAILED:");
+					return;
+				}
+
+				c.Emit(Ldsfld, current);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Callvirt, typeof(Subworld).GetMethod("Update"));
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Callvirt, normalUpdates);
+				var label = c.DefineLabel();
+				c.Emit(Brfalse, label);
+
+				c.MarkLabel(skip);
+
+				c.Index++;
+				c.MarkLabel(label);
+			};
+
+			IL_Player.Update += il =>
+			{
+				ILCursor c, cc;
+				if (!(c = new ILCursor(il)).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(out _), i => i.MatchConvR4(), i => i.MatchLdcR4(4200))
+				|| !(cc = c.Clone()).TryGotoNext(MoveType.After, i => i.MatchLdarg(0), i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Player), "gravity"))
+				|| !cc.Instrs[cc.Index].MatchLdloc(out int index))
+				{
+					Logger.Error("FAILED:");
+					return;
+				}
+
+				c.Emit(Ldsfld, current);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Callvirt, normalUpdates);
+				var label = c.DefineLabel();
+				c.Emit(Brtrue, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Ldarg_0);
+				c.Emit(Callvirt, typeof(Subworld).GetMethod("GetGravity"));
+				c.Emit(Stloc, index);
+				c.Emit(Br, label);
+
+				c.MarkLabel(skip);
+
+				cc.Index -= 3;
+				cc.MarkLabel(label);
+			};
+
+			IL_NPC.UpdateNPC_UpdateGravity += il =>
+			{
+				ILCursor c, cc;
+				if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchLdsfld(out _), i => i.MatchConvR4(), i => i.MatchLdcR4(4200))
+				|| !(cc = c.Clone()).TryGotoNext(MoveType.After, i => i.MatchLdarg(0), i => i.MatchLdarg(0), i => i.MatchCall(typeof(NPC), "get_gravity"))
+				|| !cc.Instrs[cc.Index].MatchLdloc(out int index))
+				{
+					Logger.Error("FAILED:");
+					return;
+				}
+
+				c.Emit(Ldsfld, current);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Callvirt, normalUpdates);
+				var label = c.DefineLabel();
+				c.Emit(Brtrue, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Ldarg_0);
+				c.Emit(Callvirt, typeof(Subworld).GetMethod("GetGravity"));
+				c.Emit(Stloc, index);
+				c.Emit(Br, label);
+
+				c.MarkLabel(skip);
+
+				cc.Index -= 3;
+				cc.MarkLabel(label);
+			};
+
+			IL_Liquid.Update += il =>
+			{
+				var c = new ILCursor(il);
+				if (!c.TryGotoNext(i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Liquid), "y"), i => i.MatchCall(typeof(Main), "get_UnderworldLayer")))
+				{
+					Logger.Error("FAILED:");
+					return;
+				}
+
+				c.Emit(Ldsfld, current);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+
+				c.Emit(Ldsfld, current);
+				c.Emit(Callvirt, normalUpdates);
+				c.Emit(Brfalse, (ILLabel)c.Instrs[c.Index + 3].Operand);
+
+				c.MarkLabel(skip);
+			};
+
+			IL_Player.SavePlayer += il =>
+			{
+				ILCursor c, cc, ccc;
+				if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchCall(typeof(Player), "InternalSaveMap"))
+				|| !(cc = c.Clone()).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(typeof(Main), "ServerSideCharacter"))
+				|| !(ccc = cc.Clone()).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(FileUtilities), "ProtectedInvoke")))
+				{
+					Logger.Error("FAILED:");
+					return;
+				}
+
+				c.Index -= 3;
+
+				c.Emit(Ldsfld, cache);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+
+				c.Emit(Ldsfld, cache);
+				c.Emit(Callvirt, shouldSave);
+				var label = c.DefineLabel();
+				c.Emit(Brfalse, label);
+
+				c.MarkLabel(skip);
+
+				cc.MarkLabel(label);
+
+				cc.Emit(Ldsfld, cache);
+				skip = cc.DefineLabel();
+				cc.Emit(Brfalse, skip);
+
+				cc.Emit(Ldsfld, cache);
+				cc.Emit(Callvirt, typeof(Subworld).GetMethod("get_NoPlayerSaving"));
+				label = cc.DefineLabel();
+				cc.Emit(Brtrue, label);
+
+				cc.MarkLabel(skip);
+
+				ccc.MarkLabel(label);
+			};
+
+			IL_WorldFile.SaveWorld_bool_bool += il =>
+			{
+				var c = new ILCursor(il);
+
+				c.Emit(Ldsfld, cache);
+				var skip = c.DefineLabel();
+				c.Emit(Brfalse, skip);
+				c.Emit(Ldsfld, cache);
+				c.Emit(Callvirt, shouldSave);
+				c.Emit(Brtrue, skip);
+				c.Emit(Ret);
+
+				c.MarkLabel(skip);
+			};
 
 			if (Main.dedServ)
 			{
@@ -123,106 +321,108 @@ namespace SubworldLibrary
 						c.Emit(Ldloc, index);
 						c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("SyncDisconnect", BindingFlags.NonPublic | BindingFlags.Static));
 					};
+
+					return;
 				}
-				else
+
+				IL_Main.DedServ_PostModLoad += il =>
 				{
-					IL_Main.DedServ_PostModLoad += il =>
+					var c = new ILCursor(il);
+					if (!c.TryGotoNext(i => i.MatchBr(out _)))
 					{
-						var c = new ILCursor(il);
-						if (!c.TryGotoNext(i => i.MatchBr(out _)))
-						{
-							Logger.Fatal("FAILED - subserver cannot run without this injection!");
-							Main.instance.Exit();
-							return;
-						}
+						Logger.Fatal("FAILED - subserver cannot run without this injection!");
+						Main.instance.Exit();
+						return;
+					}
 
-						ConstructorInfo gameTime = typeof(GameTime).GetConstructor(Type.EmptyTypes);
-						MethodInfo update = typeof(Main).GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance);
-						FieldInfo saveTime = typeof(Main).GetField("saveTime", BindingFlags.NonPublic | BindingFlags.Static);
+					ConstructorInfo gameTime = typeof(GameTime).GetConstructor(Type.EmptyTypes);
+					MethodInfo update = typeof(Main).GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance);
+					FieldInfo saveTime = typeof(Main).GetField("saveTime", BindingFlags.NonPublic | BindingFlags.Static);
 
-						// DedServ must not run, so this abomination replicates the update loop
+					// DedServ must not run, so this abomination replicates the update loop
 
-						c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("LoadIntoSubworld", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("LoadIntoSubworld", BindingFlags.NonPublic | BindingFlags.Static));
 
-						c.Emit(Ldarg_0);
-						c.Emit(Newobj, gameTime);
-						c.Emit(Callvirt, update);
+					c.Emit(Ldarg_0);
+					c.Emit(Newobj, gameTime);
+					c.Emit(Callvirt, update);
 
-						c.Emit(Newobj, typeof(Stopwatch).GetConstructor(Type.EmptyTypes));
-						c.Emit(Stloc_1);
-						c.Emit(Ldloc_1);
-						c.Emit(Callvirt, typeof(Stopwatch).GetMethod("Start"));
+					c.Emit(Newobj, typeof(Stopwatch).GetConstructor(Type.EmptyTypes));
+					c.Emit(Stloc_1);
+					c.Emit(Ldloc_1);
+					c.Emit(Callvirt, typeof(Stopwatch).GetMethod("Start"));
 
-						c.Emit(Ldc_I4_0);
-						c.Emit(Stsfld, typeof(Main).GetField("gameMenu"));
+					c.Emit(Ldc_I4_0);
+					c.Emit(Stsfld, typeof(Main).GetField("gameMenu"));
 
-						// vanilla magic number, not sure why it's 1 higher than 60 / 1000
-						c.Emit(Ldc_R8, 16.666666666666668);
-						c.Emit(Stloc_2);
-						c.Emit(Ldloc_2);
-						c.Emit(Stloc_3);
+					// vanilla magic number, not sure why it's 1 higher than 60 / 1000
+					c.Emit(Ldc_R8, 16.666666666666668);
+					c.Emit(Stloc_2);
+					c.Emit(Ldloc_2);
+					c.Emit(Stloc_3);
 
-						var loopStart = c.DefineLabel();
-						c.Emit(Br, loopStart);
+					var loopStart = c.DefineLabel();
+					c.Emit(Br, loopStart);
 
-						// {
+					// {
 
-						var loop = c.DefineLabel();
-						c.MarkLabel(loop);
+					var loop = c.DefineLabel();
+					c.MarkLabel(loop);
 
-						c.Emit(OpCodes.Call, typeof(Main).Assembly.GetType("Terraria.ModLoader.Engine.ServerHangWatchdog").GetMethod("Checkin", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(OpCodes.Call, typeof(Main).Assembly.GetType("Terraria.ModLoader.Engine.ServerHangWatchdog").GetMethod("Checkin", BindingFlags.NonPublic | BindingFlags.Static));
 
-						c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("CheckClients", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("CheckClients", BindingFlags.NonPublic | BindingFlags.Static));
 
-						c.Emit(Ldsfld, typeof(Netplay).GetField("HasClients"));
-						var label = c.DefineLabel();
-						c.Emit(Brfalse, label);
+					c.Emit(Ldsfld, typeof(Netplay).GetField("HasClients"));
+					var label = c.DefineLabel();
+					c.Emit(Brfalse, label);
 
-						c.Emit(Ldarg_0);
-						c.Emit(Newobj, gameTime);
-						c.Emit(Callvirt, update);
-						var label2 = c.DefineLabel();
-						c.Emit(Br, label2);
+					c.Emit(Ldarg_0);
+					c.Emit(Newobj, gameTime);
+					c.Emit(Callvirt, update);
+					var label2 = c.DefineLabel();
+					c.Emit(Br, label2);
 
-						c.MarkLabel(label);
+					c.MarkLabel(label);
 
-						c.Emit(Ldsfld, saveTime);
-						c.Emit(Callvirt, typeof(Stopwatch).GetMethod("get_IsRunning"));
-						c.Emit(Brfalse, label2);
+					c.Emit(Ldsfld, saveTime);
+					c.Emit(Callvirt, typeof(Stopwatch).GetMethod("get_IsRunning"));
+					c.Emit(Brfalse, label2);
 
-						c.Emit(Ldsfld, saveTime);
-						c.Emit(Callvirt, typeof(Stopwatch).GetMethod("Stop"));
-						c.Emit(Br, label2);
+					c.Emit(Ldsfld, saveTime);
+					c.Emit(Callvirt, typeof(Stopwatch).GetMethod("Stop"));
+					c.Emit(Br, label2);
 
-						c.MarkLabel(label2);
+					c.MarkLabel(label2);
 
-						c.Emit(Ldloc_1);
-						c.Emit(Ldloc_2);
-						c.Emit(Ldloca, 3);
-						c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("Sleep", BindingFlags.NonPublic | BindingFlags.Static));
+					c.Emit(Ldloc_1);
+					c.Emit(Ldloc_2);
+					c.Emit(Ldloca, 3);
+					c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("Sleep", BindingFlags.NonPublic | BindingFlags.Static));
 
-						c.MarkLabel(loopStart);
+					c.MarkLabel(loopStart);
 
-						c.Emit(Ldsfld, typeof(Netplay).GetField("Disconnect"));
-						c.Emit(Brfalse, loop);
+					c.Emit(Ldsfld, typeof(Netplay).GetField("Disconnect"));
+					c.Emit(Brfalse, loop);
 
-						// }
+					// }
 
-						c.Emit(Ldsfld, current);
-						c.Emit(Callvirt, shouldSave);
-						label = c.DefineLabel();
-						c.Emit(Brfalse, label);
-						c.Emit(OpCodes.Call, typeof(WorldFile).GetMethod("SaveWorld", Type.EmptyTypes));
-						c.MarkLabel(label);
+					c.Emit(Ldsfld, current);
+					c.Emit(Callvirt, shouldSave);
+					label = c.DefineLabel();
+					c.Emit(Brfalse, label);
+					c.Emit(OpCodes.Call, typeof(WorldFile).GetMethod("SaveWorld", Type.EmptyTypes));
+					c.MarkLabel(label);
 
-						c.Emit(OpCodes.Call, typeof(SystemLoader).GetMethod("OnWorldUnload"));
+					c.Emit(OpCodes.Call, typeof(SystemLoader).GetMethod("OnWorldUnload"));
 
-						c.Emit(Ret);
-					};
-				}
+					c.Emit(Ret);
+				};
 			}
 			else
 			{
+				FieldInfo hideUnderworld = typeof(SubworldSystem).GetField("hideUnderworld");
+
 				IL_Main.DoDraw += il =>
 				{
 					var c = new ILCursor(il);
@@ -459,205 +659,6 @@ namespace SubworldLibrary
 				c.Emit(Ldarg_0);
 				c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("EraseSubworlds", BindingFlags.NonPublic | BindingFlags.Static));
 			};
-
-			IL_WorldGen.clearWorld += il =>
-			{
-				var c = new ILCursor(il);
-
-				c.Emit(Ldsfld, typeof(WorldGen).GetField("lastMaxTilesX", BindingFlags.NonPublic | BindingFlags.Static));
-				c.Emit(Ldsfld, typeof(WorldGen).GetField("lastMaxTilesY", BindingFlags.NonPublic | BindingFlags.Static));
-				c.Emit(OpCodes.Call, typeof(SubworldLibrary).GetMethod("ResizeSubworld", BindingFlags.NonPublic | BindingFlags.Static));
-			};
-
-			IL_Main.DoUpdateInWorld += il =>
-			{
-				ILCursor c, cc;
-				if (!(c = new ILCursor(il)).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(SystemLoader), "PreUpdateTime"))
-				|| !(cc = c.Clone()).TryGotoNext(i => i.MatchCall(typeof(SystemLoader), "PostUpdateTime")))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Emit(Ldsfld, current);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Callvirt, normalUpdates);
-				var label = c.DefineLabel();
-				c.Emit(Brfalse, label);
-
-				c.MarkLabel(skip);
-
-				cc.MarkLabel(label);
-			};
-
-			IL_WorldGen.UpdateWorld += il =>
-			{
-				var c = new ILCursor(il);
-				if (!c.TryGotoNext(i => i.MatchCall(typeof(WorldGen), "UpdateWorld_Inner")))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Emit(Ldsfld, current);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Callvirt, typeof(Subworld).GetMethod("Update"));
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Callvirt, normalUpdates);
-				var label = c.DefineLabel();
-				c.Emit(Brfalse, label);
-
-				c.MarkLabel(skip);
-
-				c.Index++;
-				c.MarkLabel(label);
-			};
-
-			IL_Player.Update += il =>
-			{
-				ILCursor c, cc;
-				if (!(c = new ILCursor(il)).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(out _), i => i.MatchConvR4(), i => i.MatchLdcR4(4200))
-				|| !(cc = c.Clone()).TryGotoNext(MoveType.After, i => i.MatchLdarg(0), i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Player), "gravity"))
-				|| !cc.Instrs[cc.Index].MatchLdloc(out int index))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Emit(Ldsfld, current);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Callvirt, normalUpdates);
-				var label = c.DefineLabel();
-				c.Emit(Brtrue, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Ldarg_0);
-				c.Emit(Callvirt, typeof(Subworld).GetMethod("GetGravity"));
-				c.Emit(Stloc, index);
-				c.Emit(Br, label);
-
-				c.MarkLabel(skip);
-
-				cc.Index -= 3;
-				cc.MarkLabel(label);
-			};
-
-			IL_NPC.UpdateNPC_UpdateGravity += il =>
-			{
-				ILCursor c, cc;
-				if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchLdsfld(out _), i => i.MatchConvR4(), i => i.MatchLdcR4(4200))
-				|| !(cc = c.Clone()).TryGotoNext(MoveType.After, i => i.MatchLdarg(0), i => i.MatchLdarg(0), i => i.MatchCall(typeof(NPC), "get_gravity"))
-				|| !cc.Instrs[cc.Index].MatchLdloc(out int index))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Emit(Ldsfld, current);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Callvirt, normalUpdates);
-				var label = c.DefineLabel();
-				c.Emit(Brtrue, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Ldarg_0);
-				c.Emit(Callvirt, typeof(Subworld).GetMethod("GetGravity"));
-				c.Emit(Stloc, index);
-				c.Emit(Br, label);
-
-				c.MarkLabel(skip);
-
-				cc.Index -= 3;
-				cc.MarkLabel(label);
-			};
-
-			IL_Liquid.Update += il =>
-			{
-				var c = new ILCursor(il);
-				if (!c.TryGotoNext(i => i.MatchLdarg(0), i => i.MatchLdfld(typeof(Liquid), "y"), i => i.MatchCall(typeof(Main), "get_UnderworldLayer")))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Emit(Ldsfld, current);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-
-				c.Emit(Ldsfld, current);
-				c.Emit(Callvirt, normalUpdates);
-				c.Emit(Brfalse, (ILLabel)c.Instrs[c.Index + 3].Operand);
-
-				c.MarkLabel(skip);
-			};
-
-			IL_Player.SavePlayer += il =>
-			{
-				ILCursor c, cc, ccc;
-				if (!(c = new ILCursor(il)).TryGotoNext(i => i.MatchCall(typeof(Player), "InternalSaveMap"))
-				|| !(cc = c.Clone()).TryGotoNext(MoveType.AfterLabel, i => i.MatchLdsfld(typeof(Main), "ServerSideCharacter"))
-				|| !(ccc = cc.Clone()).TryGotoNext(MoveType.After, i => i.MatchCall(typeof(FileUtilities), "ProtectedInvoke")))
-				{
-					Logger.Error("FAILED:");
-					return;
-				}
-
-				c.Index -= 3;
-
-				c.Emit(Ldsfld, cache);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-
-				c.Emit(Ldsfld, cache);
-				c.Emit(Callvirt, shouldSave);
-				var label = c.DefineLabel();
-				c.Emit(Brfalse, label);
-
-				c.MarkLabel(skip);
-
-				cc.MarkLabel(label);
-
-				cc.Emit(Ldsfld, cache);
-				skip = cc.DefineLabel();
-				cc.Emit(Brfalse, skip);
-
-				cc.Emit(Ldsfld, cache);
-				cc.Emit(Callvirt, typeof(Subworld).GetMethod("get_NoPlayerSaving"));
-				label = cc.DefineLabel();
-				cc.Emit(Brtrue, label);
-
-				cc.MarkLabel(skip);
-
-				ccc.MarkLabel(label);
-			};
-
-			IL_WorldFile.SaveWorld_bool_bool += il =>
-			{
-				var c = new ILCursor(il);
-
-				c.Emit(Ldsfld, cache);
-				var skip = c.DefineLabel();
-				c.Emit(Brfalse, skip);
-				c.Emit(Ldsfld, cache);
-				c.Emit(Callvirt, shouldSave);
-				c.Emit(Brtrue, skip);
-				c.Emit(Ret);
-
-				c.MarkLabel(skip);
-			};
 		}
 
 		private static void SendBestiary(MessageBuffer buffer)
@@ -694,9 +695,47 @@ namespace SubworldLibrary
 			}
 		}
 
-		private static byte[] SendText(MessageBuffer buffer, int sentFrom, string worldName)
+		private static void SendText(MessageBuffer buffer, int start, int length)
 		{
-			string command = buffer.reader.ReadString();
+			// reader position is reset by vanilla
+			buffer.reader.BaseStream.Position = start + 5;
+
+			string command;
+			string worldName;
+
+			ChatMessage message = ChatMessage.Deserialize(buffer.reader);
+			buffer.reader.BaseStream.Position = start + 5;
+
+			if (SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket, out int sentFrom))
+			{
+				worldName = SubworldSystem.subworlds[sentFrom].DisplayName.Value;
+				message.Text = "[" + worldName + "] " + message.Text;
+
+				command = buffer.reader.ReadString();
+
+				// only read commands where they were sent from
+				if (command != "Say")
+				{
+					byte[] original = new byte[length + 1];
+					original[0] = (byte)buffer.whoAmI;
+					Buffer.BlockCopy(buffer.readBuffer, start, original, 1, length);
+					SubworldSystem.links[sentFrom].Send(original);
+					return;
+				}
+			}
+			else
+			{
+				worldName = Main.worldName;
+
+				command = buffer.reader.ReadString();
+
+				// only read commands where they were sent from
+				if (command != "Say")
+				{
+					ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
+					return;
+				}
+			}
 
 			string prepend =
 				"<" +
@@ -725,11 +764,36 @@ namespace SubworldLibrary
 				writer.Write((ushort)ModContent.GetInstance<SubworldLibrary>().NetID);
 			}
 			writer.Write((byte)3);
-			writer.Write((byte)buffer.whoAmI);
+			writer.Write((byte)255);
 			writer.Write(command);
 			writer.Write(prepend);
 
-			return stream.ToArray();
+			byte[] data = stream.ToArray();
+
+			ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
+
+			if (sentFrom < 0)
+			{
+				foreach (SubserverLink link in SubworldSystem.links.Values)
+				{
+					link.Send(data);
+				}
+				return;
+			}
+
+			foreach (KeyValuePair<int, SubserverLink> pair in SubworldSystem.links)
+			{
+				if (pair.Key != sentFrom)
+				{
+					pair.Value.Send(data);
+					continue;
+				}
+
+				byte[] original = new byte[length + 1];
+				original[0] = (byte)buffer.whoAmI;
+				Buffer.BlockCopy(buffer.readBuffer, start, original, 1, length);
+				pair.Value.Send(original);
+			}
 		}
 
 		private static bool DenyRead(MessageBuffer buffer, int start, int length)
@@ -764,47 +828,9 @@ namespace SubworldLibrary
 				{
 					Netplay.Clients[buffer.whoAmI].TimeOutTimer = 0;
 
-					// reader position is reset by vanilla
-					buffer.reader.BaseStream.Position = start + 5;
+					SendText(buffer, start, length);
 
-					ChatMessage message = ChatMessage.Deserialize(buffer.reader);
-					if (SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket, out int sentFrom))
-					{
-						string worldName = SubworldSystem.subworlds[sentFrom].DisplayName.Value;
-						message.Text = "[" + worldName + "] " + message.Text;
-
-						ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
-						buffer.reader.BaseStream.Position = start + 5;
-
-						byte[] data = SendText(buffer, sentFrom, worldName);
-
-						foreach (KeyValuePair<int, SubserverLink> pair in SubworldSystem.links)
-						{
-							if (pair.Key != sentFrom)
-							{
-								pair.Value.Send(data);
-								continue;
-							}
-
-							byte[] original = new byte[length + 1];
-							original[0] = (byte)buffer.whoAmI;
-							Buffer.BlockCopy(buf, start, original, 1, length);
-							SubworldSystem.links[sentFrom].Send(original);
-						}
-					}
-					else
-					{
-						ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
-						buffer.reader.BaseStream.Position = start + 5;
-
-						byte[] data = SendText(buffer, sentFrom, Main.worldName);
-
-						foreach (SubserverLink link in SubworldSystem.links.Values)
-						{
-							link.Send(data);
-						}
-					}
-
+					// the packet was read, don't read it again
 					return true;
 				}
 			}
@@ -968,13 +994,11 @@ namespace SubworldLibrary
 							return;
 
 						case 3: // mirror NetTextModule
-							int sender = reader.ReadByte();
-							ChatManager.Commands.ProcessIncomingMessage(ChatMessage.Deserialize(reader), 255);
+							int sender = reader.ReadByte(); // this may be set to 255 by the main server, since the actual sender may be unknown on the subserver
+							ChatManager.Commands.ProcessIncomingMessage(ChatMessage.Deserialize(reader), sender);
 							return;
 					}
 				}
-
-				RemoteClient client;
 
 				if (SubworldSystem.current != null)
 				{
@@ -985,13 +1009,14 @@ namespace SubworldLibrary
 						return;
 					}
 
-					Netplay.Clients[whoAmI].State = 0;
+					RemoteClient client = Netplay.Clients[whoAmI];
+					client.State = 0;
 
 					NetMessage.SendData(14, -1, whoAmI, null, whoAmI, 0);
-					ChatHelper.BroadcastChatMessage(NetworkText.FromKey(Lang.mp[20].Key, Netplay.Clients[whoAmI].Name), new Color(255, 240, 20), whoAmI);
+					ChatHelper.BroadcastChatMessage(NetworkText.FromKey(Lang.mp[20].Key, client.Name), new Color(255, 240, 20), whoAmI);
 					Player.Hooks.PlayerDisconnect(whoAmI);
 
-					Netplay.Clients[whoAmI].PendingTerminationApproved = true;
+					client.PendingTerminationApproved = true;
 
 					return;
 				}
@@ -1018,6 +1043,15 @@ namespace SubworldLibrary
 
 			ushort newWidth = (ushort)Math.Clamp(Main.maxTilesX + 1, 8401, 65535);
 			ushort newHeight = (ushort)Math.Clamp(Main.maxTilesY + 1, 2401, 65535);
+			if (newWidth == ushort.MaxValue)
+			{
+				Main.maxTilesX = 65534;
+			}
+			if (newHeight == ushort.MaxValue)
+			{
+				Main.maxTilesY = 65534;
+			}
+
 			Main.tile = (Tilemap)Activator.CreateInstance(typeof(Tilemap), BindingFlags.NonPublic | BindingFlags.Instance, null, new object[] { newWidth, newHeight }, null);
 			Main.Map = new WorldMap(newWidth, newHeight);
 
