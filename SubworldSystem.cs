@@ -67,80 +67,14 @@ namespace SubworldLibrary
 		void ISocket.StopListening() { }
 	}
 
-	internal class SubserverLink
-	{
-		private NamedPipeClientStream pipe;
-		private List<byte[]> queue;
-
-		public SubserverLink(string name)
-		{
-			pipe = new NamedPipeClientStream(".", name + "_IN", PipeDirection.Out);
-			queue = new List<byte[]>(16);
-		}
-
-		public bool Connecting => queue != null;
-
-		public bool QueueData(byte[] data)
-		{
-			if (queue == null)
-			{
-				return false;
-			}
-
-			queue.Add(data);
-			return true;
-		}
-
-		public void Send(byte[] data)
-		{
-			lock (this)
-			{
-				if (QueueData(data))
-				{
-					return;
-				}
-			}
-			pipe.Write(data);
-		}
-
-		public void ConnectAndProcessQueue()
-		{
-			pipe.Connect();
-			pipe.Write(queue[0]);
-			lock (this)
-			{
-				int size = 0;
-				for (int i = 1; i < queue.Count; i++)
-				{
-					size += queue[i].Length;
-				}
-
-				byte[] bytes = new byte[size];
-				size = 0;
-				for (int i = 1; i < queue.Count; i++)
-				{
-					Buffer.BlockCopy(queue[i], 0, bytes, size, queue[i].Length);
-					size += queue[i].Length;
-				}
-				pipe.Write(bytes);
-
-				queue = null;
-			}
-		}
-
-		public void Close()
-		{
-			pipe.Close();
-		}
-	}
-
 	public class SubworldSystem : ModSystem
 	{
 		internal static List<Subworld> subworlds;
 
 		internal static Subworld current;
 		internal static Subworld cache;
-		internal static WorldFileData main;
+		private static WorldFileData main;
+		private static bool copyingSubworldData;
 
 		internal static TagCompound copiedData;
 
@@ -150,6 +84,10 @@ namespace SubworldLibrary
 		public override void OnModLoad()
 		{
 			subworlds = new List<Subworld>();
+
+			playerLocations = new Dictionary<ISocket, int>();
+			links = new Dictionary<int, SubserverLink>();
+
 			Player.Hooks.OnEnterWorld += OnEnterWorld;
 			Netplay.OnDisconnect += OnDisconnect;
 		}
@@ -199,7 +137,7 @@ namespace SubworldLibrary
 		/// <summary>
 		/// The current subworld's file path.
 		/// </summary>
-		public static string CurrentPath => Path.Combine(Main.WorldPath, Path.GetFileNameWithoutExtension(main.Path), current.FileName + ".wld");
+		public static string CurrentPath => Path.Combine(Main.WorldPath, main.UniqueId.ToString(), current.FileName + ".wld");
 
 		/// <summary>
 		/// Tries to enter the subworld with the specified ID.
@@ -300,11 +238,11 @@ namespace SubworldLibrary
 					if (Main.netMode == 0)
 					{
 						BeginEntering(i);
-						break;
+						return;
 					}
 
 					MovePlayerToSubserver(player, (ushort)i);
-					break;
+					return;
 				}
 			}
 		}
@@ -326,11 +264,11 @@ namespace SubworldLibrary
 					if (Main.netMode == 0)
 					{
 						BeginEntering(i);
-						break;
+						return;
 					}
 
 					MovePlayerToSubserver(player, (ushort)i);
-					break;
+					return;
 				}
 			}
 		}
@@ -343,31 +281,20 @@ namespace SubworldLibrary
 			bool inSubworld = playerLocations.TryGetValue(client.Socket, out int location);
 			if (inSubworld)
 			{
-				if (id == location)
-				{
-					return;
-				}
-
-				byte[] data;
-				if (ModNet.NetModCount < 256)
-				{
-					data = new byte[6] { (byte)player, 5, 0, 250, (byte)subLib.NetID, (byte)subLib.NetID };
-				}
-				else
-				{
-					data = new byte[8] { (byte)player, 7, 0, 250, (byte)subLib.NetID, (byte)(subLib.NetID >> 8), (byte)subLib.NetID, (byte)(subLib.NetID >> 8) };
-				}
-				links[location].Send(data);
+				links[location].Send(GetDisconnectPacket(player, subLib.NetID));
 
 				if (id == ushort.MaxValue)
 				{
 					playerLocations.Remove(client.Socket);
-					client.State = 0;
+					client.State = 1;
 					client.ResetSections();
 
 					ModPacket leavePacket = subLib.GetPacket();
 					leavePacket.Write(id);
 					leavePacket.Send(player);
+
+					// prompt the client to reconnect
+					Netplay.Clients[player].Socket.AsyncSend(new byte[] { 5, 0, 3, (byte)player, 0 }, 0, 5, (state) => { });
 
 					return;
 				}
@@ -387,15 +314,17 @@ namespace SubworldLibrary
 			{
 				Main.player[player].active = false;
 				NetMessage.SendData(14, -1, player, null, player, 0);
-			}
-
-			ChatHelper.BroadcastChatMessage(NetworkText.FromKey("Mods.SubworldLibrary.Move", client.Name, subworlds[id].DisplayName), new Color(255, 240, 20), player);
-
-			if (!inSubworld)
-			{
+				ChatHelper.BroadcastChatMessage(NetworkText.FromKey("Mods.SubworldLibrary.Move", client.Name, subworlds[id].DisplayName), new Color(255, 240, 20), player);
 				Player.Hooks.PlayerDisconnect(player);
 			}
 
+			// prompt the client to reconnect, done before setting their location so the packet can go through
+			if (links.TryGetValue(id, out SubserverLink link) && link.Connected)
+			{
+				Netplay.Clients[player].Socket.AsyncSend(new byte[] { 5, 0, 3, (byte)player, 0 }, 0, 5, (state) => { });
+			}
+
+			// set the client's location. note that DenyRead and DenySend are now in effect
 			playerLocations[client.Socket] = id;
 
 			StartSubserver(id);
@@ -403,20 +332,23 @@ namespace SubworldLibrary
 
 		private static void SyncDisconnect(int player)
 		{
-			int netId = ModContent.GetInstance<SubworldLibrary>().NetID;
-			byte[] data; // client, (ushort) size, packet id, (byte/ushort) sublib net id twice (read a second time by sublib to sync a leaving client)
-			if (ModNet.NetModCount < 256)
-			{
-				data = new byte[6] { (byte)player, 5, 0, 250, (byte)netId, (byte)netId };
-			}
-			else
-			{
-				data = new byte[8] { (byte)player, 7, 0, 250, (byte)netId, (byte)(netId >> 8), (byte)netId, (byte)(netId >> 8) };
-			}
-
+			byte[] data = GetDisconnectPacket(player, ModContent.GetInstance<SubworldLibrary>().NetID);
 			foreach (SubserverLink link in links.Values)
 			{
 				link.Send(data);
+			}
+		}
+
+		private static byte[] GetDisconnectPacket(int player, int id)
+		{
+			// client, (ushort) size, packet id, (byte/ushort) sublib net id twice (read a second time by sublib to sync a leaving client)
+			if (ModNet.NetModCount < 256)
+			{
+				return new byte[6] { (byte)player, 5, 0, 250, (byte)id, (byte)id };
+			}
+			else
+			{
+				return new byte[8] { (byte)player, 7, 0, 250, (byte)id, (byte)(id >> 8), (byte)id, (byte)(id >> 8) };
 			}
 		}
 
@@ -432,19 +364,37 @@ namespace SubworldLibrary
 
 			string name = subworlds[id].FileName;
 
+			string args = "tModLoader.dll -server -showserverconsole -world \"" + Main.worldPathName + "\" -subworld \"" + name + "\"";
+			if (Program.LaunchParameters.TryGetValue("-modpath", out string modpath))
+			{
+				args += " -modpath \"" + modpath + "\"";
+			}
+			if (Program.LaunchParameters.TryGetValue("-modpack", out string modpack))
+			{
+				args += " -modpack \"" + modpack + "\"";
+			}
+			if (Program.LaunchParameters.TryGetValue("-steamworkshopfolder", out string steamworkshopfolder))
+			{
+				args += " -steamworkshopfolder \"" + steamworkshopfolder + "\"";
+			}
+			if (Program.LaunchParameters.TryGetValue("-config", out string config))
+			{
+				args += " -config \"" + config + "\"";
+			}
+			if (Program.LaunchParameters.TryGetValue("-forcepriority", out string forcepriority))
+			{
+				args += " -forcepriority " + forcepriority;
+			}
+			if (Netplay.SpamCheck)
+			{
+				args += " -secure";
+			}
+
 			Process p = new Process();
 			p.StartInfo.FileName = Process.GetCurrentProcess().MainModule!.FileName;
-			p.StartInfo.Arguments = "tModLoader.dll -server -showserverconsole -world \"" + Main.worldPathName + "\" -subworld \"" + name + "\"";
+			p.StartInfo.Arguments = args;
 			p.StartInfo.UseShellExecute = true;
 			p.Start();
-
-			new Thread(MainServerCallBack)
-			{
-				Name = "Subserver Packets",
-				IsBackground = true
-			}.Start(id);
-
-			links[id] = new SubserverLink(name);
 
 			copiedData = new TagCompound();
 			CopyMainWorldData();
@@ -452,12 +402,56 @@ namespace SubworldLibrary
 			using (MemoryStream stream = new MemoryStream())
 			{
 				TagIO.ToStream(copiedData, stream);
-				links[id].QueueData(stream.ToArray());
+				links[id] = new SubserverLink(name, stream.ToArray());
 			}
 
 			copiedData = null;
 
-			Task.Run(links[id].ConnectAndProcessQueue);
+			new Thread(links[id].ConnectAndRead)
+			{
+				Name = "Subserver Packets",
+				IsBackground = true
+			}.Start(id);
+
+			Task.Run(links[id].ConnectAndSend);
+		}
+
+		/// <summary>
+		/// Stops a subserver for the subworld with the specified ID, if one is running.
+		/// </summary>
+		public static void StopSubserver(int id)
+		{
+			if (!links.ContainsKey(id))
+			{
+				return;
+			}
+
+			links[id].Close();
+			links.Remove(id);
+
+			foreach (KeyValuePair<ISocket, int> player in playerLocations)
+			{
+				if (player.Value != id)
+				{
+					continue;
+				}
+
+				for (int i = 0; i < 255; i++)
+				{
+					if (Netplay.Clients[i].Socket != player.Key)
+					{
+						continue;
+					}
+
+					playerLocations.Remove(player.Key);
+					Netplay.Clients[i].State = 1;
+					Netplay.Clients[i].ResetSections();
+
+					ModPacket leavePacket = ModContent.GetInstance<SubworldLibrary>().GetPacket();
+					leavePacket.Write(ushort.MaxValue);
+					leavePacket.Send(i);
+				}
+			}
 		}
 
 		/// <summary>
@@ -498,24 +492,18 @@ namespace SubworldLibrary
 		{
 			byte[] packet = new byte[size];
 
-			int i = 0;
-			packet[i++] = 0;
+			packet[0] = 255; // invalid client under normal circumstances, message 255 from client 255 is treated as a packet from the other server
 
-			packet[i++] = (byte)(size - 1);
-			packet[i++] = (byte)((size - 1) >> 8);
+			packet[1] = (byte)(size - 1);
+			packet[2] = (byte)((size - 1) >> 8);
 
-			packet[i++] = 250;
+			packet[3] = 255;
 
-			short subLib = ModContent.GetInstance<SubworldLibrary>().NetID;
-
-			packet[i++] = (byte)subLib;
+			packet[4] = (byte)mod;
 			if (ModNet.NetModCount >= 256)
 			{
-				packet[i++] = (byte)(subLib >> 8);
-				packet[i + 1] = (byte)(mod >> 8);
+				packet[5] = (byte)(mod >> 8);
 			}
-
-			packet[i] = (byte)mod;
 
 			return packet;
 		}
@@ -526,7 +514,7 @@ namespace SubworldLibrary
 		/// </summary>
 		public static void SendToSubserver(int subserver, Mod mod, byte[] data)
 		{
-			int header = ModNet.NetModCount < 256 ? 6 : 8;
+			int header = ModNet.NetModCount < 256 ? 5 : 6;
 			byte[] packet = GetPacketHeader(data.Length + header, mod.NetID);
 			Buffer.BlockCopy(data, 0, packet, header, data.Length);
 			links[subserver].Send(packet);
@@ -537,7 +525,7 @@ namespace SubworldLibrary
 		/// </summary>
 		public static void SendToAllSubservers(Mod mod, byte[] data)
 		{
-			int header = ModNet.NetModCount < 256 ? 6 : 8;
+			int header = ModNet.NetModCount < 256 ? 5 : 6;
 			byte[] packet = GetPacketHeader(data.Length + header, mod.NetID);
 			Buffer.BlockCopy(data, 0, packet, header, data.Length);
 
@@ -552,7 +540,7 @@ namespace SubworldLibrary
 		/// </summary>
 		public static void SendToAllSubserversFromMod(Mod mod, byte[] data)
 		{
-			int header = ModNet.NetModCount < 256 ? 6 : 8;
+			int header = ModNet.NetModCount < 256 ? 5 : 6;
 			byte[] packet = GetPacketHeader(data.Length + header, mod.NetID);
 			Buffer.BlockCopy(data, 0, packet, header, data.Length);
 
@@ -570,7 +558,7 @@ namespace SubworldLibrary
 		/// </summary>
 		public static void SendToMainServer(Mod mod, byte[] data)
 		{
-			int header = ModNet.NetModCount < 256 ? 6 : 8;
+			int header = ModNet.NetModCount < 256 ? 5 : 6;
 			byte[] packet = GetPacketHeader(data.Length + header, mod.NetID);
 			Buffer.BlockCopy(data, 0, packet, header, data.Length);
 			SubserverSocket.pipe.Write(packet);
@@ -584,7 +572,7 @@ namespace SubworldLibrary
 		/// </summary>
 		public static void CopyWorldData(string key, object data)
 		{
-			if (data != null && !copiedData.ContainsKey(key))
+			if (data != null && (copyingSubworldData || !copiedData.ContainsKey(key)))
 			{
 				copiedData[key] = data;
 			}
@@ -596,16 +584,6 @@ namespace SubworldLibrary
 		/// <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
 		/// </summary>
 		public static T ReadCopiedWorldData<T>(string key) => copiedData.Get<T>(key);
-
-		private static void EraseSubworlds(int index)
-		{
-			WorldFileData world = Main.WorldList[index];
-			string path = Path.Combine(Main.WorldPath, Path.GetFileNameWithoutExtension(world.Path));
-			if (FileUtilities.Exists(path, world.IsCloudSave))
-			{
-				FileUtilities.Delete(path, world.IsCloudSave);
-			}
-		}
 
 		private static bool ChangeAudio()
 		{
@@ -635,6 +613,7 @@ namespace SubworldLibrary
 
 		private static void CopyMainWorldData()
 		{
+			copiedData["mainId"] = Main.ActiveWorldFileData.UniqueId.ToByteArray();
 			copiedData["seed"] = Main.ActiveWorldFileData.SeedText;
 			copiedData["gameMode"] = Main.ActiveWorldFileData.GameMode;
 			copiedData["hardMode"] = Main.hardMode;
@@ -711,6 +690,7 @@ namespace SubworldLibrary
 
 		private static void ReadCopiedMainWorldData()
 		{
+			main.UniqueId = new Guid(copiedData.Get<byte[]>("mainId"));
 			Main.ActiveWorldFileData.SetSeed(copiedData.Get<string>("seed"));
 			Main.GameMode = copiedData.Get<int>("gameMode");
 			Main.hardMode = copiedData.Get<bool>("hardMode");
@@ -880,61 +860,64 @@ namespace SubworldLibrary
 			DD2Event.DownedInvasionT3 = copiedData.Get<bool>(nameof(DD2Event.DownedInvasionT3));
 		}
 
-		private static void MainServerCallBack(object id)
+		private static void CheckBytes()
 		{
-			NamedPipeServerStream pipe = new NamedPipeServerStream(subworlds[(int)id].FileName + "_OUT", PipeDirection.In);
-			try
+			if (!NetMessage.buffer[256].checkBytes)
 			{
-				pipe.WaitForConnection();
+				return;
+			}
 
-				while (pipe.IsConnected)
+			lock (NetMessage.buffer[256])
+			{
+				int pos = 0;
+				int len = NetMessage.buffer[256].totalData;
+
+				while (len >= 2)
 				{
-					byte[] packetInfo = new byte[3];
-					if (pipe.Read(packetInfo) < 3)
+					int packetLen = BitConverter.ToUInt16(NetMessage.buffer[256].readBuffer, pos);
+					if (len < packetLen)
 					{
 						break;
 					}
 
-					byte low = packetInfo[1];
-					byte high = packetInfo[2];
-					int length = (high << 8) | low;
-
-					byte[] data = new byte[length];
-					pipe.Read(data, 2, length - 2);
-					data[0] = low;
-					data[1] = high;
-
-					if (data[2] == 250 && (ModNet.NetModCount < 256 ? data[3] : BitConverter.ToUInt16(data, 3)) == ModContent.GetInstance<SubworldLibrary>().NetID)
+					BinaryReader reader = NetMessage.buffer[256].reader;
+					if (reader == null)
 					{
-						MemoryStream stream = new MemoryStream(data);
-						using BinaryReader reader = new BinaryReader(stream);
-						if (ModNet.NetModCount < 256)
-						{
-							stream.Position = 5;
-							ModNet.GetMod(data[4]).HandlePacket(reader, 256);
-						}
-						else
-						{
-							stream.Position = 6;
-							ModNet.GetMod(BitConverter.ToUInt16(data, 5)).HandlePacket(reader, 256);
-						}
+						NetMessage.buffer[256].ResetReader();
+						reader = NetMessage.buffer[256].reader;
 					}
-					else
-					{
-						Netplay.Clients[packetInfo[0]].Socket.AsyncSend(data, 0, length, (state) => { });
-					}
+
+					long streamPos = reader.BaseStream.Position;
+					reader.BaseStream.Position = pos + 3;
+
+					ModContent.GetInstance<SubworldLibrary>().Logger.Info(Convert.ToHexString(NetMessage.buffer[256].readBuffer, pos, len));
+
+					ModNet.GetMod(ModNet.NetModCount < 256 ? reader.ReadByte() : reader.ReadUInt16()).HandlePacket(reader, 256);
+
+					reader.BaseStream.Position = streamPos + packetLen;
+					len -= packetLen;
+					pos += packetLen;
 				}
-			}
-			finally
-			{
-				pipe.Close();
-				links[(int)id].Close();
-				links.Remove((int)id);
+
+				if (len != NetMessage.buffer[256].totalData)
+				{
+					// this is what vanilla does, but BlockCopy may be faster
+					for (int i = 0; i < len; i++)
+					{
+						NetMessage.buffer[256].readBuffer[i] = NetMessage.buffer[256].readBuffer[i + pos];
+					}
+					NetMessage.buffer[256].totalData = len;
+				}
+
+				NetMessage.buffer[256].checkBytes = false;
 			}
 		}
 
-		private static bool LoadIntoSubworld()
+		private static void LoadIntoSubworld()
 		{
+			playerLocations = null;
+			links = null;
+
 			if (Program.LaunchParameters.TryGetValue("-subworld", out string id))
 			{
 				for (int i = 0; i < subworlds.Count; i++)
@@ -948,8 +931,8 @@ namespace SubworldLibrary
 					main = Main.ActiveWorldFileData;
 					current = subworlds[i];
 
-					NamedPipeServerStream pipe = new NamedPipeServerStream(current.FileName + "_IN", PipeDirection.In);
-					pipe.WaitForConnection();
+					NamedPipeClientStream pipe = new NamedPipeClientStream(".", current.FileName + ".IN", PipeDirection.In);
+					pipe.Connect();
 
 					copiedData = TagIO.FromStream(pipe);
 					LoadWorld();
@@ -968,26 +951,20 @@ namespace SubworldLibrary
 						IsBackground = true
 					}.Start(pipe);
 
-					SubserverSocket.pipe = new NamedPipeClientStream(".", current.FileName + "_OUT", PipeDirection.Out);
+					SubserverSocket.pipe = new NamedPipeClientStream(".", current.FileName + ".OUT", PipeDirection.Out);
 					SubserverSocket.pipe.Connect();
 
-					return true;
+					return;
 				}
-
-				Netplay.Disconnect = true;
-				Main.instance.Exit();
-				return true;
 			}
 
-			playerLocations = new Dictionary<ISocket, int>();
-			links = new Dictionary<int, SubserverLink>();
-
-			return false;
+			Netplay.Disconnect = true;
+			Main.instance.Exit();
 		}
 
 		private static void SubserverCallBack(object pipeObject)
 		{
-			NamedPipeServerStream pipe = (NamedPipeServerStream)pipeObject;
+			NamedPipeClientStream pipe = (NamedPipeClientStream)pipeObject;
 			try
 			{
 				while (pipe.IsConnected && !Netplay.Disconnect)
@@ -1010,19 +987,31 @@ namespace SubworldLibrary
 							Monitor.Enter(buffer);
 						}
 
-						//TODO: is there a race condition here? will removing this statement make it more frequent?
+						buffer.readBuffer[buffer.totalData] = packetInfo[1];
+						buffer.readBuffer[buffer.totalData + 1] = packetInfo[2];
+						pipe.Read(buffer.readBuffer, buffer.totalData + 2, length - 2);
+
+						if (packetInfo[0] == 255 && buffer.readBuffer[buffer.totalData + 2] == 255)
+						{
+							// this packet actually came from the main server, put it in message buffer 256 for reading on the main thread
+							lock (NetMessage.buffer[256])
+							{
+								Buffer.BlockCopy(buffer.readBuffer, buffer.totalData, NetMessage.buffer[256].readBuffer, NetMessage.buffer[256].totalData, length);
+								NetMessage.buffer[256].totalData += length;
+								NetMessage.buffer[256].checkBytes = true;
+							}
+							continue;
+						}
+
 						if (!Netplay.Clients[buffer.whoAmI].IsActive)
 						{
 							if (Netplay.Clients[buffer.whoAmI].Socket == null)
 							{
 								Netplay.Clients[buffer.whoAmI].Socket = new SubserverSocket(buffer.whoAmI);
 							}
+							Netplay.Clients[buffer.whoAmI].State = 1;
 							Netplay.Clients[buffer.whoAmI].IsActive = true;
 						}
-
-						buffer.readBuffer[buffer.totalData] = packetInfo[1];
-						buffer.readBuffer[buffer.totalData + 1] = packetInfo[2];
-						pipe.Read(buffer.readBuffer, buffer.totalData + 2, length - 2);
 
 						buffer.totalData += length;
 						buffer.checkBytes = true;
@@ -1032,8 +1021,8 @@ namespace SubworldLibrary
 			finally
 			{
 				Netplay.Disconnect = true;
-				pipe.Close();
-				SubserverSocket.pipe.Close();
+				pipe?.Close();
+				SubserverSocket.pipe?.Close();
 			}
 		}
 
@@ -1054,7 +1043,10 @@ namespace SubworldLibrary
 					}
 					if (cache != null)
 					{
+						copyingSubworldData = true;
 						cache.CopySubworldData();
+						copyingSubworldData = false;
+
 						cache.OnExit();
 					}
 					if ((int)index >= 0)
@@ -1064,7 +1056,7 @@ namespace SubworldLibrary
 				}
 				else
 				{
-					Netplay.Connection.State = 1;
+					Netplay.Connection.State = 3;
 					cache?.OnExit();
 				}
 
@@ -1136,14 +1128,24 @@ namespace SubworldLibrary
 				}
 			}
 
+			for (int i = 0; i < 255; i++)
+			{
+				if (i != Main.myPlayer)
+				{
+					Main.player[i].active = false;
+				}
+			}
+
 			if (netMode != 1)
 			{
 				LoadWorld();
 			}
-			else
+			// the subserver prompts packets from the client first now, so this is no longer needed
+			/*else
 			{
 				NetMessage.SendData(1);
-			}
+				Main.autoPass = true;
+			}*/
 		}
 
 		private static void LoadWorld()
@@ -1259,13 +1261,11 @@ namespace SubworldLibrary
 			WorldFileData data = new WorldFileData(path, cloud)
 			{
 				Name = Main.worldName,
-				GameMode = Main.GameMode,
 				CreationTime = DateTime.Now,
 				Metadata = FileMetadata.FromCurrentSettings(FileType.World),
 				WorldGeneratorVersion = Main.WorldGeneratorVersion,
 				UniqueId = Guid.NewGuid()
 			};
-			data.SetSeed(main.SeedText);
 			Main.ActiveWorldFileData = data;
 
 			Main.maxTilesX = current.Width;

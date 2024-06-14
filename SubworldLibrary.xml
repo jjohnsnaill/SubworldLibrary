@@ -252,6 +252,11 @@
             Starts a subserver for the subworld with the specified ID, if one is not running already.
             </summary>
         </member>
+        <member name="M:SubworldLibrary.SubworldSystem.StopSubserver(System.Int32)">
+            <summary>
+            Stops a subserver for the subworld with the specified ID, if one is running.
+            </summary>
+        </member>
         <member name="M:SubworldLibrary.SubworldSystem.GetIndex(System.String)">
             <summary>
             Tries to get the index of the subworld with the specified ID.
