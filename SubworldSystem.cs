@@ -75,6 +75,7 @@ namespace SubworldLibrary
 		internal static Subworld cache;
 		private static WorldFileData main;
 		private static bool copyingSubworldData;
+		private static int suppressAutoShutdown;
 
 		internal static TagCompound copiedData;
 
@@ -90,6 +91,8 @@ namespace SubworldLibrary
 
 			Player.Hooks.OnEnterWorld += OnEnterWorld;
 			Netplay.OnDisconnect += OnDisconnect;
+
+			suppressAutoShutdown = -1;
 		}
 
 		public override void Unload()
@@ -202,6 +205,9 @@ namespace SubworldLibrary
 
 			if (index == int.MinValue)
 			{
+				current = null;
+				Main.gameMenu = true;
+
 				Task.Factory.StartNew(ExitWorldCallBack, null);
 				return;
 			}
@@ -212,6 +218,10 @@ namespace SubworldLibrary
 				{
 					main = Main.ActiveWorldFileData;
 				}
+
+				current = index < 0 ? null : subworlds[index];
+				Main.gameMenu = true;
+
 				Task.Factory.StartNew(ExitWorldCallBack, index);
 				return;
 			}
@@ -285,6 +295,13 @@ namespace SubworldLibrary
 
 				if (id == ushort.MaxValue)
 				{
+					if (Main.autoShutdown && client.Socket.GetRemoteAddress().IsLocalHost())
+					{
+						// this is reverted in the CheckBytes injection
+						Main.autoShutdown = false;
+						suppressAutoShutdown = player;
+					}
+
 					playerLocations.Remove(client.Socket);
 					client.State = 1;
 					client.ResetSections();
@@ -337,6 +354,12 @@ namespace SubworldLibrary
 				playerLocations.Remove(Netplay.Clients[player].Socket);
 			}
 
+			if (player == suppressAutoShutdown)
+			{
+				suppressAutoShutdown = -1;
+				Main.autoShutdown = true;
+			}
+
 			byte[] data = GetDisconnectPacket(player, ModContent.GetInstance<SubworldLibrary>().NetID);
 			foreach (SubserverLink link in links.Values)
 			{
@@ -354,6 +377,15 @@ namespace SubworldLibrary
 			else
 			{
 				return new byte[8] { (byte)player, 7, 0, 250, (byte)id, (byte)(id >> 8), (byte)id, (byte)(id >> 8) };
+			}
+		}
+
+		private static void AllowAutoShutdown(int i)
+		{
+			if (i == suppressAutoShutdown && Netplay.Clients[i].State == 10)
+			{
+				suppressAutoShutdown = -1;
+				Main.autoShutdown = true;
 			}
 		}
 
@@ -947,6 +979,7 @@ namespace SubworldLibrary
 					for (int j = 0; j < 256; j++)
 					{
 						Netplay.Clients[j].Id = j;
+						Netplay.Clients[j].TileSections = new bool[Main.maxTilesX / 200 + 1, Main.maxTilesY / 150 + 1];
 						Netplay.Clients[j].Reset();
 					}
 					SubserverSocket.address = new TcpAddress(IPAddress.Any, 0);
@@ -1064,12 +1097,6 @@ namespace SubworldLibrary
 					Netplay.Connection.State = 3;
 					cache?.OnExit();
 				}
-
-				current = (int)index < 0 ? null : subworlds[(int)index];
-			}
-			else
-			{
-				current = null;
 			}
 
 			Main.invasionProgress = -1;
@@ -1088,8 +1115,6 @@ namespace SubworldLibrary
 			{
 				hideUnderworld = false;
 			}
-
-			Main.gameMenu = true;
 
 			SoundEngine.StopTrackedSounds();
 			CaptureInterface.ResetFocus();

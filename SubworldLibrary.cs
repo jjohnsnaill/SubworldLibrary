@@ -306,6 +306,10 @@ namespace SubworldLibrary
 						c.Emit(Brtrue, label);
 
 						cc.MarkLabel(label);
+
+						cc.Index = c.Instrs.Count - 1;
+						cc.Emit(Ldarg_0);
+						cc.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("AllowAutoShutdown", BindingFlags.NonPublic | BindingFlags.Static));
 					};
 
 					IL_Netplay.UpdateConnectedClients += il =>
@@ -339,7 +343,7 @@ namespace SubworldLibrary
 					MethodInfo update = typeof(Main).GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance);
 					FieldInfo saveTime = typeof(Main).GetField("saveTime", BindingFlags.NonPublic | BindingFlags.Static);
 
-					// DedServ must not run, so this abomination replicates the update loop
+					// DedServ must not run, so this abomination replicates the update loop (lots of private methods and reflection is slow)
 
 					c.Emit(OpCodes.Call, typeof(SubworldSystem).GetMethod("LoadIntoSubworld", BindingFlags.NonPublic | BindingFlags.Static));
 
@@ -709,7 +713,6 @@ namespace SubworldLibrary
 			if (SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket, out int sentFrom))
 			{
 				worldName = SubworldSystem.subworlds[sentFrom].DisplayName.Value;
-				message.Text = "[" + worldName + "] " + message.Text;
 
 				command = buffer.reader.ReadString();
 
@@ -725,6 +728,7 @@ namespace SubworldLibrary
 			}
 			else
 			{
+				sentFrom = -1;
 				worldName = Main.worldName;
 
 				command = buffer.reader.ReadString();
@@ -738,11 +742,11 @@ namespace SubworldLibrary
 			}
 
 			string prepend =
-				"<" +
-				Main.player[buffer.whoAmI].name +
-				"> [" +
+				"[" +
 				worldName +
-				"] " +
+				"] <" +
+				Main.player[buffer.whoAmI].name +
+				"> " +
 				buffer.reader.ReadString();
 
 			int len = Encoding.UTF8.GetByteCount(command) + Encoding.UTF8.GetByteCount(prepend);
@@ -768,18 +772,23 @@ namespace SubworldLibrary
 			writer.Write(command);
 			writer.Write(prepend);
 
-			byte[] data = stream.ToArray();
-
-			ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
+			// the stream's length is exact, so GetBuffer can be used instead of ToArray
+			byte[] data = stream.GetBuffer();
 
 			if (sentFrom < 0)
 			{
+				ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
+
 				foreach (SubserverLink link in SubworldSystem.links.Values)
 				{
 					link.Send(data);
 				}
 				return;
 			}
+
+			// other clients may not know the name of this client, so pretend this is a server message
+			message.Text = prepend;
+			ChatManager.Commands.ProcessIncomingMessage(message, 255);
 
 			foreach (KeyValuePair<int, SubserverLink> pair in SubworldSystem.links)
 			{
@@ -1030,6 +1039,11 @@ namespace SubworldLibrary
 			else
 			{
 				ushort id = reader.ReadUInt16();
+
+				// it may be best to queue this at the end of the update cycle
+				SubworldSystem.current = id < ushort.MaxValue ? SubworldSystem.subworlds[id] : null;
+				Main.gameMenu = true;
+
 				Task.Factory.StartNew(SubworldSystem.ExitWorldCallBack, id < ushort.MaxValue ? id : -1);
 			}
 		}
