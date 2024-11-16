@@ -1,3 +1,4 @@
 Mods.SubworldLibrary: {
-	Return: Возвращаться
+	Return: Покинуть подмир
+	Move: "{0} отправился в {1}."
 }
