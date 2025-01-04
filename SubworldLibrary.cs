@@ -690,24 +690,20 @@ namespace SubworldLibrary
 			}
 			writer.Write(type);
 			writer.Write(id);
-			switch (type)
+			if (type == 0)
 			{
-				case 0: // mirror NetBestiaryModule
-					ushort count = BitConverter.ToUInt16(buffer, start + 8);
-					writer.Write(count);
-					Main.BestiaryTracker.Kills.SetKillCountDirectly(ContentSamples.NpcsByNetId[id].GetBestiaryCreditId(), count);
-					break;
-
-				case 1: // mirror NetBestiaryModule
-					Main.BestiaryTracker.Sights.SetWasSeenDirectly(ContentSamples.NpcsByNetId[id].GetBestiaryCreditId());
-					break;
-
-				case 2: // mirror NetBestiaryModule
-					Main.BestiaryTracker.Chats.SetWasChatWithDirectly(ContentSamples.NpcsByNetId[id].GetBestiaryCreditId());
-					break;
+				writer.Write(BitConverter.ToUInt16(buffer, start + 8));
 			}
 
 			byte[] data = stream.GetBuffer();
+
+			lock (NetMessage.buffer[256])
+			{
+				Buffer.BlockCopy(data, 1, NetMessage.buffer[256].readBuffer, NetMessage.buffer[256].totalData, data.Length - 1);
+				NetMessage.buffer[256].totalData += data.Length - 1;
+				NetMessage.buffer[256].checkBytes = true;
+			}
+
 			for (int i = 0; i < SubworldSystem.subworlds.Count; i++)
 			{
 				SubworldSystem.subworlds[i].link?.Send(data);
@@ -870,21 +866,25 @@ namespace SubworldLibrary
 				return false;
 			}
 
-			if (data[start + 2] == 82)
+			if (Thread.CurrentThread.Name == "Subserver Packets")
 			{
-				ushort packetId = BitConverter.ToUInt16(data, start + 3);
-
-				// propagate bestiary updates
-				if (packetId == NetManager.Instance.GetId<NetBestiaryModule>())
+				if (data[start + 2] == 82)
 				{
-					SendBestiary(data, start);
+					ushort packetId = BitConverter.ToUInt16(data, start + 3);
 
-					// the main server should always send this packet
-					return false;
+					// propagate bestiary updates
+					if (packetId == NetManager.Instance.GetId<NetBestiaryModule>())
+					{
+						SendBestiary(data, start);
+
+						// the main server should always send this packet
+						return false;
+					}
 				}
+				return false;
 			}
 
-			return Thread.CurrentThread.Name != "Subserver Packets" && SubworldSystem.deniedSockets.Contains(socket);
+			return SubworldSystem.deniedSockets.Contains(socket);
 		}
 
 		private static void Sleep(Stopwatch stopwatch, double delta, ref double target)
@@ -906,6 +906,7 @@ namespace SubworldLibrary
 
 		private static void CheckClients()
 		{
+			bool active = false;
 			for (int i = 0; i < 256; i++)
 			{
 				RemoteClient client = Netplay.Clients[i];
@@ -924,9 +925,14 @@ namespace SubworldLibrary
 
 				if (client.State > 0)
 				{
-					Netplay.HasClients = true;
-					return;
+					active = true;
 				}
+			}
+
+			if (active)
+			{
+				Netplay.HasClients = true;
+				return;
 			}
 
 			if (Netplay.HasClients)

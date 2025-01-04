@@ -87,10 +87,10 @@ namespace SubworldLibrary
 		{
 			subworlds = new List<Subworld>();
 
-			playerLocations = new int[255];
+			playerLocations = new int[256];
 			Array.Fill(playerLocations, -1);
 
-			pendingMoves = new int[255];
+			pendingMoves = new int[256];
 			Array.Fill(pendingMoves, -1);
 
 			deniedSockets = new HashSet<ISocket>();
@@ -375,15 +375,14 @@ namespace SubworldLibrary
 				return;
 			}
 
-			SubserverLink link = subworlds[id].link;
-
 			// prompt the client to reconnect, done before setting their location so the packet can go through
+			SubserverLink link = subworlds[id].link;
 			if (link != null && link.Connected)
 			{
 				client.Socket.AsyncSend(new byte[] { 5, 0, 3, (byte)player, 0 }, 0, 5, (state) => { });
 			}
 
-			// set the client's location. note that DenyRead and DenySend are now in effect
+			// set the client's location. DenyRead and DenySend are now in effect
 			playerLocations[player] = id;
 			deniedSockets.Add(client.Socket);
 
