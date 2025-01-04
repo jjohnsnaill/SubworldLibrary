@@ -6,8 +6,8 @@
     <members>
         <member name="M:SubworldLibrary.ICopyWorldData.CopyMainWorldData">
             <summary>
-            Called on all content with this interface before <see cref="M:SubworldLibrary.Subworld.OnEnter"/>, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
-            <br/>This is where you copy data from the main world to a subworld, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
+            Called on all content with the <see cref="T:SubworldLibrary.ICopyWorldData"/> interface, before <see cref="M:SubworldLibrary.Subworld.OnEnter"/>, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
+            <br/>This is where you copy data from the main world to be shared across ALL subworlds, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
             <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
             </summary>
         </member>
@@ -85,25 +85,11 @@
             <br/>This can be used to make things happen in the subworld.
             </summary>
         </member>
-        <member name="M:SubworldLibrary.Subworld.CopyMainWorldData">
-            <summary>
-            Called on all subworlds before <see cref="M:SubworldLibrary.Subworld.OnEnter"/>, and after <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
-            <br/>This is where you copy data from the main world to the subworld, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
-            <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
-            </summary>
-        </member>
         <member name="M:SubworldLibrary.Subworld.CopySubworldData">
             <summary>
             Called before <see cref="M:SubworldLibrary.Subworld.OnExit"/>.
             <br/>This is where you copy data from the subworld to another world, via <see cref="M:SubworldLibrary.SubworldSystem.CopyWorldData(System.String,System.Object)"/>.
             <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
-            </summary>
-        </member>
-        <member name="M:SubworldLibrary.Subworld.ReadCopiedMainWorldData">
-            <summary>
-            Called on all subworlds before one generates, or after one loads from file.
-            <br/>This is where you read data copied from the main world to the subworld, via <see cref="M:SubworldLibrary.SubworldSystem.ReadCopiedWorldData``1(System.String)"/>.
-            <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
             </summary>
         </member>
         <member name="M:SubworldLibrary.Subworld.ReadCopiedSubworldData">
@@ -247,6 +233,11 @@
             Sends the specified player to the specified subworld.
             </summary>
         </member>
+        <member name="M:SubworldLibrary.SubworldSystem.MovePlayerToMainWorld(System.Int32)">
+            <summary>
+            Sends the specified player to the main world.
+            </summary>
+        </member>
         <member name="M:SubworldLibrary.SubworldSystem.StartSubserver(System.Int32)">
             <summary>
             Starts a subserver for the subworld with the specified ID, if one is not running already.
@@ -297,6 +288,7 @@
             Can only be called in <see cref="M:SubworldLibrary.Subworld.CopyMainWorldData"/> or <see cref="M:SubworldLibrary.Subworld.OnExit"/>!
             <br/>Stores data to be transferred between worlds under the specified key, if that key is not already in use.
             <br/>Naming the key after the variable pointing to the data is highly recommended to avoid redundant copying. This can be done automatically with nameof().
+            <br/>Keys starting with '!' cannot be changed once copied, and don't need to be copied back to the main world.
             <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
             </summary>
         </member>
@@ -304,6 +296,7 @@
             <summary>
             Can only be called in <see cref="M:SubworldLibrary.Subworld.ReadCopiedMainWorldData"/> or <see cref="M:SubworldLibrary.Subworld.ReadCopiedSubworldData"/>!
             <br/>Reads data copied from another world stored under the specified key.
+            <br/>Keys starting with '!' don't need to be copied back to the main world. (SubworldSystem.Current == null)
             <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
             </summary>
         </member>

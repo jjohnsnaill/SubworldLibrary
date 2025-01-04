@@ -66,13 +66,13 @@ namespace SubworldLibrary
 			// prompt clients to connect to the subserver
 			for (int i = 0; i < 256; i++)
 			{
-				if (Netplay.Clients[i].IsConnected())
+				if (Netplay.Clients[i].IsConnected() && SubworldSystem.playerLocations[i] == id)
 				{
 					Netplay.Clients[i].Socket.AsyncSend(new byte[] { 5, 0, 3, (byte)i, 0 }, 0, 5, (state) => { });
 				}
 			}
 
-			while (pipeOut.IsConnected)
+			while (pipeOut.IsConnected && !Netplay.Disconnect)
 			{
 				byte[] packetInfo = new byte[3];
 				if (pipeOut.Read(packetInfo) < 3)
@@ -102,7 +102,7 @@ namespace SubworldLibrary
 				}
 
 				// prevents a race condition where a subserver tries to send packets to a client who just left
-				if (SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[packetInfo[0]].Socket, out int location) && location == id)
+				if (SubworldSystem.playerLocations[packetInfo[0]] == id)
 				{
 					Netplay.Clients[packetInfo[0]].Socket.AsyncSend(data, 0, length, (state) => { });
 				}

@@ -445,7 +445,7 @@ namespace SubworldLibrary
 					c.Emit(Brfalse, label);
 
 					c.Emit(Ldsfld, current);
-					c.Emit(Ldarg_0);
+					c.Emit(Ldarg_1);
 					c.Emit(Callvirt, typeof(Subworld).GetMethod("DrawSetup"));
 					c.Emit(Ret);
 
@@ -455,7 +455,7 @@ namespace SubworldLibrary
 					c.Emit(Brfalse, skip);
 
 					c.Emit(Ldsfld, cache);
-					c.Emit(Ldarg_0);
+					c.Emit(Ldarg_1);
 					c.Emit(Callvirt, typeof(Subworld).GetMethod("DrawSetup"));
 					c.Emit(Ret);
 
@@ -545,6 +545,8 @@ namespace SubworldLibrary
 						return;
 					}
 
+					ccc.Index -= 4;
+
 					ccc.Emit(Ldsfld, current);
 					var skip = ccc.DefineLabel();
 					ccc.Emit(Brfalse, skip);
@@ -555,7 +557,7 @@ namespace SubworldLibrary
 
 					ccc.MarkLabel(skip);
 
-					ccc.Index += 2;
+					ccc.Index += 6;
 					ccc.MarkLabel(label);
 
 					cccc.Emit(Ldsfld, typeof(SubworldSystem).GetField("noReturn"));
@@ -665,9 +667,10 @@ namespace SubworldLibrary
 			};
 		}
 
-		private static void SendBestiary(MessageBuffer buffer)
+		private static void SendBestiary(byte[] buffer, int start)
 		{
-			byte type = buffer.reader.ReadByte();
+			byte type = buffer[start + 5];
+			short id = BitConverter.ToInt16(buffer, start + 6);
 
 			MemoryStream stream = new MemoryStream(ModNet.NetModCount < 256 ? (type == 0 ? 10 : 8) : (type == 0 ? 11 : 9));
 			using BinaryWriter writer = new BinaryWriter(stream);
@@ -686,16 +689,28 @@ namespace SubworldLibrary
 				writer.Write((ushort)ModContent.GetInstance<SubworldLibrary>().NetID);
 			}
 			writer.Write(type);
-			writer.Write(buffer.reader.ReadInt16());
-			if (type == 0)
+			writer.Write(id);
+			switch (type)
 			{
-				writer.Write(buffer.reader.ReadUInt16());
+				case 0: // mirror NetBestiaryModule
+					ushort count = BitConverter.ToUInt16(buffer, start + 8);
+					writer.Write(count);
+					Main.BestiaryTracker.Kills.SetKillCountDirectly(ContentSamples.NpcsByNetId[id].GetBestiaryCreditId(), count);
+					break;
+
+				case 1: // mirror NetBestiaryModule
+					Main.BestiaryTracker.Sights.SetWasSeenDirectly(ContentSamples.NpcsByNetId[id].GetBestiaryCreditId());
+					break;
+
+				case 2: // mirror NetBestiaryModule
+					Main.BestiaryTracker.Chats.SetWasChatWithDirectly(ContentSamples.NpcsByNetId[id].GetBestiaryCreditId());
+					break;
 			}
 
-			byte[] data = stream.ToArray();
-			foreach (SubserverLink link in SubworldSystem.links.Values)
+			byte[] data = stream.GetBuffer();
+			for (int i = 0; i < SubworldSystem.subworlds.Count; i++)
 			{
-				link.Send(data);
+				SubworldSystem.subworlds[i].link?.Send(data);
 			}
 		}
 
@@ -710,7 +725,8 @@ namespace SubworldLibrary
 			ChatMessage message = ChatMessage.Deserialize(buffer.reader);
 			buffer.reader.BaseStream.Position = start + 5;
 
-			if (SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket, out int sentFrom))
+			int sentFrom = SubworldSystem.playerLocations[buffer.whoAmI];
+			if (sentFrom >= 0)
 			{
 				worldName = SubworldSystem.subworlds[sentFrom].DisplayName.Value;
 
@@ -722,13 +738,12 @@ namespace SubworldLibrary
 					byte[] original = new byte[length + 1];
 					original[0] = (byte)buffer.whoAmI;
 					Buffer.BlockCopy(buffer.readBuffer, start, original, 1, length);
-					SubworldSystem.links[sentFrom].Send(original);
+					SubworldSystem.subworlds[sentFrom].link?.Send(original);
 					return;
 				}
 			}
 			else
 			{
-				sentFrom = -1;
 				worldName = Main.worldName;
 
 				command = buffer.reader.ReadString();
@@ -779,9 +794,9 @@ namespace SubworldLibrary
 			{
 				ChatManager.Commands.ProcessIncomingMessage(message, buffer.whoAmI);
 
-				foreach (SubserverLink link in SubworldSystem.links.Values)
+				for (int i = 0; i < SubworldSystem.subworlds.Count; i++)
 				{
-					link.Send(data);
+					SubworldSystem.subworlds[i].link?.Send(data);
 				}
 				return;
 			}
@@ -790,18 +805,18 @@ namespace SubworldLibrary
 			message.Text = prepend;
 			ChatManager.Commands.ProcessIncomingMessage(message, 255);
 
-			foreach (KeyValuePair<int, SubserverLink> pair in SubworldSystem.links)
+			for (int i = 0; i < SubworldSystem.subworlds.Count; i++)
 			{
-				if (pair.Key != sentFrom)
+				if (i != sentFrom)
 				{
-					pair.Value.Send(data);
+					SubworldSystem.subworlds[i].link?.Send(data);
 					continue;
 				}
 
 				byte[] original = new byte[length + 1];
 				original[0] = (byte)buffer.whoAmI;
 				Buffer.BlockCopy(buffer.readBuffer, start, original, 1, length);
-				pair.Value.Send(original);
+				SubworldSystem.subworlds[i].link?.Send(original);
 			}
 		}
 
@@ -815,24 +830,11 @@ namespace SubworldLibrary
 				return false;
 			}
 
-			// these packets should be sent to all subservers
 			if (buf[start + 2] == 82)
 			{
 				ushort packetId = BitConverter.ToUInt16(buf, start + 3);
 
-				if (packetId == NetManager.Instance.GetId<NetBestiaryModule>())
-				{
-					Netplay.Clients[buffer.whoAmI].TimeOutTimer = 0;
-
-					// reader position is reset by vanilla
-					buffer.reader.BaseStream.Position = start + 5;
-
-					SendBestiary(buffer);
-
-					// the main server should always read this packet
-					return false;
-				}
-
+				// propagate chat messages
 				if (packetId == NetManager.Instance.GetId<NetTextModule>())
 				{
 					Netplay.Clients[buffer.whoAmI].TimeOutTimer = 0;
@@ -844,7 +846,8 @@ namespace SubworldLibrary
 				}
 			}
 
-			if (!SubworldSystem.playerLocations.TryGetValue(Netplay.Clients[buffer.whoAmI].Socket, out int id))
+			int id = SubworldSystem.playerLocations[buffer.whoAmI];
+			if (id < 0)
 			{
 				return false;
 			}
@@ -854,14 +857,34 @@ namespace SubworldLibrary
 			byte[] packet = new byte[length + 1];
 			packet[0] = (byte)buffer.whoAmI;
 			Buffer.BlockCopy(buf, start, packet, 1, length);
-			SubworldSystem.links[id].Send(packet);
+			SubworldSystem.subworlds[id].link?.Send(packet);
 
 			return true;
 		}
 
 		private static bool DenySend(ISocket socket, byte[] data, int start, int length, ref object state)
 		{
-			return Thread.CurrentThread.Name != "Subserver Packets" && SubworldSystem.playerLocations.ContainsKey(socket);
+			// always send sublib packets
+			if (data[start + 2] == 250 && (ModNet.NetModCount < 256 ? data[start + 3] : BitConverter.ToUInt16(data, start + 3)) == ModContent.GetInstance<SubworldLibrary>().NetID)
+			{
+				return false;
+			}
+
+			if (data[start + 2] == 82)
+			{
+				ushort packetId = BitConverter.ToUInt16(data, start + 3);
+
+				// propagate bestiary updates
+				if (packetId == NetManager.Instance.GetId<NetBestiaryModule>())
+				{
+					SendBestiary(data, start);
+
+					// the main server should always send this packet
+					return false;
+				}
+			}
+
+			return Thread.CurrentThread.Name != "Subserver Packets" && SubworldSystem.deniedSockets.Contains(socket);
 		}
 
 		private static void Sleep(Stopwatch stopwatch, double delta, ref double target)
@@ -883,39 +906,33 @@ namespace SubworldLibrary
 
 		private static void CheckClients()
 		{
-			bool connection = false;
-			for (int i = 0; i < 255; i++)
+			for (int i = 0; i < 256; i++)
 			{
 				RemoteClient client = Netplay.Clients[i];
-				if (client.PendingTermination || client.State == 0)
-				{
-					if (client.PendingTerminationApproved)
-					{
-						client.Reset();
 
-						NetMessage.SendData(14, -1, i, null, i, 0);
-						ChatHelper.BroadcastChatMessage(NetworkText.FromKey(Lang.mp[20].Key, client.Name), new Color(255, 240, 20), i);
-						Player.Hooks.PlayerDisconnect(i);
-					}
+				// the other checks vanilla does aren't needed
+				if (client.PendingTerminationApproved)
+				{
+					client.Reset();
+
+					NetMessage.SendData(14, -1, i, null, i, 0);
+					ChatHelper.BroadcastChatMessage(NetworkText.FromKey(Lang.mp[20].Key, client.Name), new Color(255, 240, 20), i);
+					Player.Hooks.PlayerDisconnect(i);
+
 					continue;
 				}
+
 				if (client.State > 0)
 				{
-					connection = true;
-					break;
+					Netplay.HasClients = true;
+					return;
 				}
 			}
 
-			if (!Netplay.HasClients)
+			if (Netplay.HasClients)
 			{
-				Netplay.HasClients = connection;
-				return;
-			}
-
-			if (!connection)
-			{
-				Netplay.Disconnect = true;
 				Netplay.HasClients = false;
+				Netplay.Disconnect = true;
 			}
 		}
 
@@ -1006,6 +1023,9 @@ namespace SubworldLibrary
 							int sender = reader.ReadByte(); // this may be set to 255 by the main server, since the actual sender may be unknown on the subserver
 							ChatManager.Commands.ProcessIncomingMessage(ChatMessage.Deserialize(reader), sender);
 							return;
+
+						default:
+							return;
 					}
 				}
 
@@ -1018,20 +1038,17 @@ namespace SubworldLibrary
 						return;
 					}
 
-					RemoteClient client = Netplay.Clients[whoAmI];
-					client.State = 0;
-
-					NetMessage.SendData(14, -1, whoAmI, null, whoAmI, 0);
-					ChatHelper.BroadcastChatMessage(NetworkText.FromKey(Lang.mp[20].Key, client.Name), new Color(255, 240, 20), whoAmI);
-					Player.Hooks.PlayerDisconnect(whoAmI);
-
-					client.PendingTerminationApproved = true;
-
+					Netplay.Clients[whoAmI].PendingTerminationApproved = true;
 					return;
 				}
 
+				// always read an id in case a request is sent multiple times
 				ushort id = reader.ReadUInt16();
-				if (!SubworldSystem.noReturn)
+				if (SubworldSystem.pendingMoves[whoAmI] >= 0)
+				{
+					SubworldSystem.FinishMove(whoAmI);
+				}
+				else if (!SubworldSystem.noReturn)
 				{
 					SubworldSystem.MovePlayerToSubserver(whoAmI, id);
 				}
@@ -1040,9 +1057,15 @@ namespace SubworldLibrary
 			{
 				ushort id = reader.ReadUInt16();
 
-				// it may be best to queue this at the end of the update cycle
+				// it may be best to set this at the end of the update cycle
 				SubworldSystem.current = id < ushort.MaxValue ? SubworldSystem.subworlds[id] : null;
+
+				Main.menuMode = 10;
 				Main.gameMenu = true;
+
+				ModPacket packet = GetPacket();
+				packet.Write(id);
+				packet.Send();
 
 				Task.Factory.StartNew(SubworldSystem.ExitWorldCallBack, id < ushort.MaxValue ? id : -1);
 			}

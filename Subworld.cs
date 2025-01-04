@@ -17,8 +17,8 @@ namespace SubworldLibrary
 	public interface ICopyWorldData : ILoadable
 	{
 		/// <summary>
-		/// Called on all content with this interface before <see cref="Subworld.OnEnter"/>, and after <see cref="Subworld.OnExit"/>.
-		/// <br/>This is where you copy data from the main world to a subworld, via <see cref="SubworldSystem.CopyWorldData"/>.
+		/// Called on all content with the <see cref="ICopyWorldData"/> interface, before <see cref="Subworld.OnEnter"/>, and after <see cref="Subworld.OnExit"/>.
+		/// <br/>This is where you copy data from the main world to be shared across ALL subworlds, via <see cref="SubworldSystem.CopyWorldData"/>.
 		/// <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
 		/// </summary>
 		void CopyMainWorldData() { }
@@ -42,6 +42,8 @@ namespace SubworldLibrary
 			SubworldSystem.subworlds.Add(this);
 		}
 		public sealed override void SetupContent() => SetStaticDefaults();
+
+		internal SubserverLink link;
 
 		public string FileName => Mod.Name + "_" + Name;
 
@@ -102,11 +104,6 @@ namespace SubworldLibrary
 		/// <br/>This can be used to make things happen in the subworld.
 		/// </summary>
 		public virtual void Update() { }
-		/// <summary>
-		/// Called on all subworlds before <see cref="OnEnter"/>, and after <see cref="OnExit"/>.
-		/// <br/>This is where you copy data from the main world to the subworld, via <see cref="SubworldSystem.CopyWorldData"/>.
-		/// <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
-		/// </summary>
 		public virtual void CopyMainWorldData() { }
 		/// <summary>
 		/// Called before <see cref="OnExit"/>.
@@ -114,11 +111,6 @@ namespace SubworldLibrary
 		/// <code>SubworldSystem.CopyWorldData(nameof(DownedSystem.downedBoss), DownedSystem.downedBoss);</code>
 		/// </summary>
 		public virtual void CopySubworldData() { }
-		/// <summary>
-		/// Called on all subworlds before one generates, or after one loads from file.
-		/// <br/>This is where you read data copied from the main world to the subworld, via <see cref="SubworldSystem.ReadCopiedWorldData"/>.
-		/// <code>DownedSystem.downedBoss = SubworldSystem.ReadCopiedWorldData&lt;bool&gt;(nameof(DownedSystem.downedBoss));</code>
-		/// </summary>
 		public virtual void ReadCopiedMainWorldData() { }
 		/// <summary>
 		/// Called while leaving the subworld, either before a different world generates, or after a different world loads from file.
