@@ -1,7 +1,4 @@
-# SubworldLibrary
-Dimensions, made easy.
-
-A tool for modders to easily add dimensions (referred to as subworlds) to their mods, making all the necessary code injections, handling Multiplayer and managing every subworld.
+Subworld Library is an API for Terraria modders to easily add dimensions (referred to as subworlds) to their mods, making all the necessary code injections, handling Multiplayer and managing every subworld.
 
 Report issues here, or on the forum page: https://forums.terraria.org/index.php?threads/86283
 
