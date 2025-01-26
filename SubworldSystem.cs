@@ -464,7 +464,7 @@ namespace SubworldLibrary
 			{
 				args += " -savedirectory \"" + savedirectory + "\"";
 			}
-			if (Program.LaunchParameters.TryGetValue("-savedirectory", out string tmlsavedirectory))
+			if (Program.LaunchParameters.TryGetValue("-tmlsavedirectory", out string tmlsavedirectory))
 			{
 				args += " -tmlsavedirectory \"" + tmlsavedirectory + "\"";
 			}
