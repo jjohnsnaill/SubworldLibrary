@@ -46,7 +46,10 @@ namespace SubworldLibrary
 			byte[] packet = new byte[size + 1];
 			packet[0] = (byte)id;
 			Buffer.BlockCopy(data, offset, packet, 1, size);
-			SubworldSystem.pipeOut.Write(packet);
+			lock (SubworldSystem.buffer)
+			{
+				SubworldSystem.buffer.Add(packet);
+			}
 		}
 
 		void ISocket.Close() { }
@@ -82,6 +85,8 @@ namespace SubworldLibrary
 
 		internal static NamedPipeClientStream pipeIn;
 		internal static NamedPipeClientStream pipeOut;
+
+		internal static List<byte[]> buffer;
 
 		public override void OnModLoad()
 		{
@@ -485,6 +490,8 @@ namespace SubworldLibrary
 			p.StartInfo.FileName = Process.GetCurrentProcess().MainModule!.FileName;
 			p.StartInfo.Arguments = args;
 			p.StartInfo.UseShellExecute = true;
+			p.EnableRaisingEvents = true;
+			p.Exited += (_, _) => { StopSubserver(id); };
 			p.Start();
 
 			copiedData = new TagCompound();
@@ -498,13 +505,17 @@ namespace SubworldLibrary
 
 			copiedData = null;
 
-			new Thread(subworld.link.ConnectAndRead)
+			new Thread(subworld.link.WriteLoop)
 			{
-				Name = "Subserver Packets",
+				Name = "Subserver Packet Writer",
 				IsBackground = true
 			}.Start(id);
 
-			Task.Run(subworld.link.ConnectAndSend);
+			new Thread(subworld.link.ReadLoop)
+			{
+				Name = "Subserver Packet Reader",
+				IsBackground = true
+			}.Start(id);
 		}
 
 		/// <summary>
@@ -647,7 +658,10 @@ namespace SubworldLibrary
 			int header = ModNet.NetModCount < 256 ? 5 : 6;
 			byte[] packet = GetPacketHeader(data.Length + header, mod.NetID);
 			Buffer.BlockCopy(data, 0, packet, header, data.Length);
-			pipeOut.Write(packet);
+			lock (buffer)
+			{
+				buffer.Add(packet);
+			}
 		}
 
 		/// <summary>
@@ -1020,6 +1034,7 @@ namespace SubworldLibrary
 					Main.myPlayer = 255;
 					main = Main.ActiveWorldFileData;
 					current = subworlds[i];
+					buffer = [];
 
 					pipeIn = new NamedPipeClientStream(".", current.FileName + ".IN", PipeDirection.In);
 					pipeIn.Connect();
@@ -1037,7 +1052,7 @@ namespace SubworldLibrary
 					}
 					SubserverSocket.address = new TcpAddress(IPAddress.Any, 0);
 
-					new Thread(SubserverLoop)
+					new Thread(SubserverReadLoop)
 					{
 						IsBackground = true
 					}.Start();
@@ -1050,6 +1065,11 @@ namespace SubworldLibrary
 					pipeOut = new NamedPipeClientStream(".", current.FileName + ".OUT", PipeDirection.Out);
 					pipeOut.Connect();
 
+					new Thread(SubserverWriteLoop)
+					{
+						IsBackground = true
+					}.Start();
+
 					return;
 				}
 			}
@@ -1058,7 +1078,7 @@ namespace SubworldLibrary
 			Main.instance.Exit();
 		}
 
-		private static void SubserverLoop()
+		private static void SubserverReadLoop()
 		{
 			try
 			{
@@ -1115,6 +1135,36 @@ namespace SubworldLibrary
 						buffer.totalData += length;
 						buffer.checkBytes = true;
 					}
+				}
+			}
+			finally
+			{
+				Netplay.Disconnect = true;
+				pipeIn?.Close();
+				pipeOut?.Close();
+			}
+		}
+
+		private static void SubserverWriteLoop()
+		{
+			try
+			{
+				while (pipeOut.IsConnected && !Netplay.Disconnect)
+				{
+					if (buffer.Count <= 0)
+					{
+						continue;
+					}
+
+					byte[] data;
+
+					lock (buffer)
+					{
+						data = buffer[0];
+						buffer.RemoveAt(0);
+					}
+
+					pipeOut.Write(data);
 				}
 			}
 			finally

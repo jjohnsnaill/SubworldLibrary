@@ -5,3 +5,4 @@ homepage=https://forums.terraria.org/index.php?threads/86283
 hideCode=true
 hideResources=true
 includeSource=false
+buildIgnore=ModCallExample\*, *.dll

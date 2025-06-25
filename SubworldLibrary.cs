@@ -866,7 +866,7 @@ namespace SubworldLibrary
 				return false;
 			}
 
-			if (Thread.CurrentThread.Name == "Subserver Packets")
+			if (Thread.CurrentThread.Name == "Subserver Packet Reader")
 			{
 				if (data[start + 2] == 82)
 				{
