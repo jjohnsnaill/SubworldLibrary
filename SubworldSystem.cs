@@ -1143,6 +1143,9 @@ namespace SubworldLibrary
 					Netplay.Disconnect = true;
 					return;
 				}
+
+				// Put the thread to sleep, so as to not hog resources.
+				Thread.Sleep(1000);
 			}
 		}
 
