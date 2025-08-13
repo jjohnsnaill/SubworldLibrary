@@ -43,6 +43,7 @@ namespace SubworldLibrary
 				{
 					if (buffer.Count <= 0)
 					{
+						Thread.Sleep(1);
 						continue;
 					}
 
@@ -131,4 +132,5 @@ namespace SubworldLibrary
 			}
 		}
 	}
+
 }
