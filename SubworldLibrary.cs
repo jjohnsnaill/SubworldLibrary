@@ -264,13 +264,13 @@ namespace SubworldLibrary
 					void AsyncSend(ILContext il)
 					{
 						var c = new ILCursor(il);
-						if (!c.TryGotoNext(MoveType.After, i => i.MatchRet()))
-						{
-							Logger.Error("FAILED:");
-							return;
-						}
+
+						// Go before the load of 'if (ModNet.DetailedLogging)'.
+						c.GotoNext(MoveType.Before, i => i.MatchLdsfld(typeof(ModNet), nameof(ModNet.DetailedLogging)));
+						// Above labels must jump into our code.
 						c.MoveAfterLabels();
 
+						// Emit DenySend call.
 						c.Emit(Ldarg_0);
 						c.Emit(Ldarg_1);
 						c.Emit(Ldarg_2);
